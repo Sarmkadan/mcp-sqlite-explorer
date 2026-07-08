@@ -1,0 +1,37 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+artifacts/
+
+# Rider / VS
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+coverage/
+*.coverage
+*.trx
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Local scratch databases used while poking at the server
+*.local.db
+scratch/
