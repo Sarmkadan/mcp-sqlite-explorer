@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/McpSqliteExplorer/McpSqliteExplorer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/McpSqliteExplorer.Tests/McpSqliteExplorer.Tests.csproj" />
+  </Folder>
+</Solution>
