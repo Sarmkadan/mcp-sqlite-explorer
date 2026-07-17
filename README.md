@@ -282,6 +282,46 @@ var result = explorer.RunSelect("SELECT * FROM users LIMIT 10");
 result.EnsureValid(); // Throws if result contains invalid data
 ```
 
+## SqliteExplorerExtensions
+
+The `SqliteExplorerExtensions` static class provides a set of convenient extension methods that simplify common database operations and reduce boilerplate code when working with `SqliteExplorer` and `QueryResult` objects. These methods handle type conversion, counting, existence checks, and pattern matching for table names.
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+
+var dbPath = "/path/to/your/database.db";
+var explorer = new SqliteExplorer(dbPath);
+
+// Count rows in a table without fetching all data
+var userCount = explorer.CountRows("SELECT * FROM users");
+Console.WriteLine($"Users table has {userCount} rows");
+
+// Check if a table has any rows
+if (explorer.HasRows("orders"))
+{
+    Console.WriteLine("Orders table is not empty");
+}
+
+// Get the first value from a query result
+var firstUserId = explorer.RunSelect("SELECT id FROM users LIMIT 1")
+    .FirstValue<int?>();
+Console.WriteLine($"First user ID: {firstUserId}");
+
+// Get the first value with automatic type conversion
+var firstUserName = explorer.RunSelect("SELECT name FROM users LIMIT 1")
+    .FirstValueAs<string>();
+Console.WriteLine($"First user name: {firstUserName}");
+
+// Find tables matching a pattern (supports * and ? wildcards)
+var userTables = explorer.GetTablesMatching("user*");
+foreach (var table in userTables)
+{
+    Console.WriteLine($"Found table: {table}");
+}
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
