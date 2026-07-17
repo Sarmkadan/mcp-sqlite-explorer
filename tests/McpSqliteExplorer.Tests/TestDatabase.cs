@@ -49,6 +49,28 @@ public sealed class TestDatabase : IDisposable
                 (2, 'A Wizard of Earthsea', 1, 1968),
                 (3, 'Solaris', 2, 1961);
 
+            CREATE TABLE loans (
+                id        INTEGER PRIMARY KEY,
+                book_id   INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                borrower  TEXT NOT NULL,
+                due_date  TEXT
+            );
+
+            INSERT INTO loans (id, book_id, borrower, due_date) VALUES
+                (1, 1, 'alice', '2026-01-15'),
+                (2, 3, 'bob', NULL);
+
+            CREATE INDEX idx_books_year ON books(year);
+
+            CREATE TABLE __EFMigrationsHistory (
+                MigrationId    TEXT NOT NULL PRIMARY KEY,
+                ProductVersion TEXT NOT NULL
+            );
+
+            INSERT INTO __EFMigrationsHistory (MigrationId, ProductVersion) VALUES
+                ('20250101000000_Initial', '9.0.0'),
+                ('20250201000000_AddLoans', '9.0.0');
+
             CREATE VIEW recent_books AS
                 SELECT title, year FROM books WHERE year >= 1970;
             """;
