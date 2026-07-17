@@ -33,8 +33,11 @@ public static class SqliteExplorerTestsValidation
     /// <param name="value">The test class instance to check.</param>
     /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
-    public static bool IsValid(this SqliteExplorerTests value) =>
-        !value.Validate().Any();
+    public static bool IsValid(this SqliteExplorerTests value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return !value.Validate().Any();
+    }
 
     /// <summary>
     /// Ensures that the supplied <see cref="SqliteExplorerTests"/> instance is valid.
