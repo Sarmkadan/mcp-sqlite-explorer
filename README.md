@@ -155,6 +155,43 @@ dotnet build      # build everything
 dotnet test       # run the unit tests
 ```
 
+## SqliteAnalysisTools
+
+The `SqliteAnalysisTools` class exposes read-only analysis utilities that help understand and optimize SQLite schemas. It provides methods to inspect query plans, profile table data, generate statistics, suggest indexes, and visualize relationships without ever modifying the database.
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+
+var dbPath = "/path/to/your/database.db";
+var tools = new SqliteAnalysisTools(dbPath);
+
+// Generate an Entity-Relationship Diagram for the whole schema
+var erd = await tools.GenerateErd();
+Console.WriteLine(erd);
+
+// Profile a specific table to understand data distribution
+var profile = await tools.ProfileTable("users");
+Console.WriteLine($"Null rate for Email: {profile.Columns["Email"].NullRate:P1}");
+
+// Get table statistics including on-disk size
+var stats = await tools.TableStatsOverview();
+Console.WriteLine($"Total size: {stats.TotalSizeBytes:N0} bytes");
+
+// Suggest indexes for a slow query
+var suggestions = await tools.SuggestIndexes(
+    "SELECT * FROM orders WHERE customer_email = 'a@b.c'");
+foreach (var idx in suggestions)
+{
+    Console.WriteLine(idx.ProposedSql);
+}
+
+// Walk the foreign-key graph from a table
+var chain = await tools.ForeignKeyChain("orders", maxDepth: 2);
+Console.WriteLine($"Found {chain.Tables.Count} related tables");
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
