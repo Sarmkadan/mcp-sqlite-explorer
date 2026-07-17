@@ -2,8 +2,10 @@
 
 A small [Model Context Protocol](https://modelcontextprotocol.io) server that lets an
 agent **explore a SQLite database read-only**. Point it at a `.db` file and it exposes
-four tools: list the tables, describe a table's schema, peek at sample rows, and run a
-capped `SELECT`. Nothing it does can modify the database.
+tools to list tables, describe schemas, peek at sample rows, run a capped `SELECT` -
+plus a set of analysis tools: ERD generation, foreign-key graph walking, index and
+query-plan inspection, per-column data profiling, table size stats, heuristic index
+suggestions and EF Core migration history. Nothing it does can modify the database.
 
 Written in C# (.NET 10) on top of the official
 [`ModelContextProtocol`](https://www.nuget.org/packages/ModelContextProtocol) SDK and
@@ -35,6 +37,61 @@ truncated the response says so (`"truncated": true`).
 | `run_select` | `sql`, `limit?` | Rows for a single read-only `SELECT` / `WITH ... SELECT` |
 
 `limit` defaults to 100 and is clamped to the range 1–1000.
+
+### Schema exploration
+
+| Tool | Arguments | Returns |
+|------|-----------|---------|
+| `list_indexes` | `table` | Indexes: name, uniqueness, origin (explicit / UNIQUE / PK), partial flag, columns |
+| `list_foreign_keys` | `table` | FKs: column, referenced table/column, ON UPDATE / ON DELETE actions |
+| `foreign_key_graph` | – | Every FK in the database as a flat edge list |
+| `foreign_key_chain` | `table`, `maxDepth?` | BFS over the FK graph from a table, both directions, up to `maxDepth` hops (default 3) |
+| `generate_erd` | – | The whole schema as a Mermaid `erDiagram` (tables, typed columns, PK/FK markers, relationships) |
+| `migration_history` | – | Applied EF Core migrations from `__EFMigrationsHistory`, or `hasHistoryTable: false` |
+
+### Analysis
+
+| Tool | Arguments | Returns |
+|------|-----------|---------|
+| `explain_query_plan` | `sql` | `EXPLAIN QUERY PLAN` tree for a SELECT - scans, index usage, join order. The query itself is not executed |
+| `profile_table` | `table` | Per column: null count/rate, distinct cardinality, min/max, top-5 most frequent values. Aggregates run inside SQLite, so large tables are fine |
+| `table_stats` | – | Per table: row count, column count, index count, on-disk size (when the build exposes `dbstat`) |
+| `suggest_indexes` | `sql` | Full-table scans found in the plan, cross-referenced with the query's un-indexed columns, phrased as `CREATE INDEX` DDL for a human to review |
+
+Example - ask why a query is slow and what to do about it:
+
+```
+explain_query_plan  sql: "SELECT * FROM orders WHERE customer_email = 'a@b.c'"
+→ { "nodes": [ { "detail": "SCAN orders" } ] }
+
+suggest_indexes     sql: "SELECT * FROM orders WHERE customer_email = 'a@b.c'"
+→ { "suggestions": [ {
+      "table": "orders",
+      "columns": ["customer_email"],
+      "proposedSql": "CREATE INDEX \"idx_orders_customer_email\" ON \"orders\" (\"customer_email\");",
+      "rationale": "The plan shows a full scan of 'orders' (SCAN orders) and the query references these un-indexed columns. ..."
+  } ] }
+```
+
+The suggestions are deliberately heuristic and the server can never create the index
+itself - it hands the DDL to whoever owns the schema.
+
+Example - visualise the schema:
+
+```
+generate_erd
+→ { "format": "mermaid", "diagram": "erDiagram\n    authors {\n        INTEGER id PK\n ..." }
+```
+
+Paste the `diagram` string into any Mermaid renderer (GitHub markdown, mermaid.live,
+most IDEs) to get the picture.
+
+### Error messages
+
+Raw SQLite errors are translated into actionable ones: `no such table: ordrs` becomes
+"... Use list_tables to see the tables and views that exist in this database", a locked
+database explains that a writer holds the lock, `file is not a database` points at
+encryption/corruption instead of a bare error code.
 
 ## Running it
 
@@ -78,7 +135,10 @@ McpSqliteExplorer.slnx
 src/McpSqliteExplorer/
   Program.cs           # host setup, stdio transport, arg/env handling
   SqliteExplorer.cs    # read-only data access + the SELECT-only guard (the core)
+  SqliteExplorerSchema.cs    # indexes, FKs, ERD, EF migration history
+  SqliteExplorerAnalysis.cs  # query plans, profiling, table stats, index suggestions
   SqliteTools.cs       # MCP tool surface, thin JSON adapters over SqliteExplorer
+  SqliteAnalysisTools.cs     # MCP tool surface for the schema/analysis tools
 tests/McpSqliteExplorer.Tests/
   TestDatabase.cs      # temp-file fixture with a small seeded schema
   SqliteExplorerTests.cs
