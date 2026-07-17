@@ -48,8 +48,9 @@ public static class SqliteToolsJsonExtensions
     /// Attempts to deserialize a JSON string to a <see cref="SqliteTools"/> instance.
     /// </summary>
     /// <param name="json">The JSON string to deserialize.</param>
-    /// <param name="value">Receives the deserialized <see cref="SqliteTools"/> instance if successful.</param>
+    /// <param name="value">Receives the deserialized <see cref="SqliteTools"/> instance if successful; otherwise, <see langword="null"/>.</param>
     /// <returns><see langword="true"/> if deserialization succeeds; otherwise, <see langword="false"/>.</returns>
+/// <exception cref="ArgumentNullException">Thrown when <paramref name="json"/> is <see langword="null"/>.</exception>
     public static bool TryFromJson(string json, out SqliteTools? value)
     {
         ArgumentNullException.ThrowIfNull(json);
