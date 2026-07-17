@@ -192,6 +192,49 @@ var chain = await tools.ForeignKeyChain("orders", maxDepth: 2);
 Console.WriteLine($"Found {chain.Tables.Count} related tables");
 ```
 
+## SqliteExplorer
+
+The `SqliteExplorer` class is the core analysis engine that provides read-only database exploration capabilities. It offers methods to examine query execution plans, profile table data distributions, gather table statistics, and suggest performance improvements through indexes. All operations are performed on a read-only connection, ensuring the database remains unmodified.
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+
+var dbPath = "/path/to/your/database.db";
+var explorer = new SqliteExplorer(dbPath);
+
+// Analyze a query's execution plan without executing it
+var plan = explorer.ExplainQueryPlan(
+    "SELECT * FROM orders WHERE customer_email = 'alice@example.com'");
+foreach (var node in plan)
+{
+    Console.WriteLine($"Node {node.Id} (parent {node.Parent}): {node.Detail}");
+}
+
+// Profile a table to understand data distribution and quality
+var profile = explorer.ProfileTable("users");
+Console.WriteLine($"Table {profile.Table} has {profile.RowCount} rows");
+Console.WriteLine($"Null rate for Email: {profile.Columns.First(c => c.Name == "Email").NullRate:P1}");
+
+// Get comprehensive statistics for all tables
+var stats = explorer.GetTableStats();
+foreach (var tableStat in stats)
+{
+    Console.WriteLine($"{tableStat.Table}: {tableStat.RowCount:N0} rows, " +
+                     $"{tableStat.EstimatedSizeBytes?.ToString("N0") ?? "?"} bytes");
+}
+
+// Receive index suggestions for slow queries
+var suggestions = explorer.SuggestIndexes(
+    "SELECT * FROM orders WHERE customer_id = 42 AND order_date > '2024-01-01'");
+foreach (var suggestion in suggestions)
+{
+    Console.WriteLine($"Index suggestion for {suggestion.Table}: {suggestion.ProposedSql}");
+    Console.WriteLine($"  Rationale: {suggestion.Rationale}");
+}
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
