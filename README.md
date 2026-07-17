@@ -587,6 +587,66 @@ tests.AssertTableRowCount(explorer, "Users", 5);
 tests.AssertFirstRowValue<string>(explorer, "Users", "Name", "John Doe");
 ```
 
+## SqliteExplorerSchemaTests
+
+The `SqliteExplorerSchemaTests` class contains integration tests that verify the correctness of SQLite database schema exploration functionality. It tests index listing, foreign key analysis, ER diagram generation, and EF Core migration history detection to ensure all schema exploration tools work as expected.
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+using McpSqliteExplorer.Tests;
+
+// Create a test database fixture
+using var db = new TestDatabase();
+var explorer = new SqliteExplorer(db.Path);
+
+// Test that ListIndexes correctly returns explicitly created indexes with their columns
+var indexes = explorer.ListIndexes("books");
+var yearIndex = indexes.Single(i => i.Name == "idx_books_year");
+Assert.False(yearIndex.Unique);
+Assert.Equal("create-index", yearIndex.Origin);
+Assert.False(yearIndex.Partial);
+Assert.Equal(["year"], yearIndex.Columns);
+
+// Test that ListForeignKeys correctly returns declared foreign key references
+var foreignKeys = explorer.ListForeignKeys("loans");
+var fk = Assert.Single(foreignKeys);
+Assert.Equal("loans", fk.Table);
+Assert.Equal("book_id", fk.Column);
+Assert.Equal("books", fk.ReferencesTable);
+Assert.Equal("id", fk.ReferencesColumn);
+Assert.Equal("CASCADE", fk.OnDelete);
+
+// Test that GetForeignKeyGraph returns all foreign key relationships in the database
+var edges = explorer.GetForeignKeyGraph();
+Assert.Contains(edges, e => e.Table == "books" && e.ReferencesTable == "authors");
+Assert.Contains(edges, e => e.Table == "loans" && e.ReferencesTable == "books");
+
+// Test that ExploreForeignKeyChain walks foreign key relationships in both directions
+var hops = explorer.ExploreForeignKeyChain("books", maxDepth: 2);
+Assert.Contains(hops, h =>
+    h.Depth == 1 && h.ToTable == "authors" && h.Direction == "references");
+Assert.Contains(hops, h =>
+    h.Depth == 1 && h.ToTable == "loans" && h.Direction == "referenced-by");
+
+// Test that GenerateErd produces a valid ER diagram string
+var erd = explorer.GenerateErd();
+Assert.StartsWith("erDiagram", erd);
+Assert.Contains("books {", erd);
+Assert.Contains("INTEGER id PK", erd);
+Assert.Contains("INTEGER author_id FK", erd);
+Assert.Contains("books }o--|| authors", erd);
+Assert.Contains("loans }o--|| books", erd);
+
+// Test that GetMigrationHistory correctly reads EF Core migration history from the database
+var info = explorer.GetMigrationHistory();
+Assert.True(info.HasHistoryTable);
+Assert.Equal(2, info.Migrations.Count);
+Assert.Equal("20250101000000_Initial", info.Migrations[0].MigrationId);
+Assert.Equal("9.0.0", info.Migrations[0].ProductVersion);
+```
+
 ## TestDatabaseJsonExtensions
 
 The `TestDatabaseJsonExtensions` static class provides JSON serialization and deserialization utilities for the `TestDatabase` class. It enables round-trip serialization of test database instances to JSON strings and back, including custom handling of the `SqliteConnectionStringBuilder` property through a dedicated JSON converter. This is particularly useful for persisting test database state or transferring it between test runs.
