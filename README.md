@@ -440,6 +440,33 @@ foreach (var statement in multiStatements)
 }
 ```
 
+## SqliteExplorerTestsExtensions
+
+The `SqliteExplorerTestsExtensions` static class provides extension methods for `SqliteExplorerTests` that simplify common test scenarios such as creating test databases, extracting values from query results, and asserting table states. These extension methods provide fluent APIs for common test operations in the test suite.
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+using McpSqliteExplorer.Tests;
+
+// Create a test instance and create a test database
+var tests = new SqliteExplorerTests();
+var (explorer, dbPath) = tests.CreateTestDatabase();
+
+// Use the explorer to run queries
+var result = explorer.RunSelect("SELECT COUNT(*) FROM Users");
+
+// Get a value from the result using the extension method
+int userCount = tests.GetValue<int>(result, 0, "");
+
+// Assert that a table has a specific number of rows
+tests.AssertTableRowCount(explorer, "Users", 5);
+
+// Assert that a specific column in the first row has an expected value
+tests.AssertFirstRowValue<string>(explorer, "Users", "Name", "John Doe");
+```
+
 ## TestDatabaseJsonExtensions
 
 The `TestDatabaseJsonExtensions` static class provides JSON serialization and deserialization utilities for the `TestDatabase` class. It enables round-trip serialization of test database instances to JSON strings and back, including custom handling of the `SqliteConnectionStringBuilder` property through a dedicated JSON converter. This is particularly useful for persisting test database state or transferring it between test runs.
