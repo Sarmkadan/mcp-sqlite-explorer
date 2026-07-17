@@ -7,16 +7,23 @@ namespace McpSqliteExplorer.Tests;
 /// Provides extension methods for <see cref="SqliteExplorerTests"/> to simplify common test scenarios
 /// and improve test readability.
 /// </summary>
+/// <remarks>
+/// This static class contains extension methods that provide fluent APIs for common test operations
+/// such as creating test databases, extracting values from query results, and asserting table states.
+/// </remarks>
 public static class SqliteExplorerTestsExtensions
 {
     /// <summary>
     /// Creates a test database instance and returns both the explorer and the database path.
     /// </summary>
     /// <param name="tests">The test instance.</param>
-    /// <returns>A tuple containing the explorer and database path.</returns>
+    /// <returns>A tuple containing the initialized explorer and database path.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="tests"/> is null.</exception>
     /// <exception cref="InvalidOperationException">Thrown if database creation fails.</exception>
     public static (SqliteExplorer Explorer, string DbPath) CreateTestDatabase(this SqliteExplorerTests tests)
     {
+        ArgumentNullException.ThrowIfNull(tests);
+
         var db = new TestDatabase();
         return (new SqliteExplorer(db.Path), db.Path);
     }
@@ -26,9 +33,12 @@ public static class SqliteExplorerTestsExtensions
     /// </summary>
     /// <param name="tests">The test instance.</param>
     /// <returns>The initialized SqliteExplorer instance.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="tests"/> is null.</exception>
     /// <exception cref="InvalidOperationException">Thrown if database creation fails.</exception>
     public static SqliteExplorer CreateExplorer(this SqliteExplorerTests tests)
     {
+        ArgumentNullException.ThrowIfNull(tests);
+
         var db = new TestDatabase();
         return new SqliteExplorer(db.Path);
     }
