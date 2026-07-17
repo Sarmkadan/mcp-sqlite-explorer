@@ -1,0 +1,8 @@
+
+## Notes
+
+- All methods are static and thread‑safe; each call operates on its own `SqliteExplorer` instance or `QueryResult`.  
+- The temporary database created by `CreateTestDatabase` is deleted automatically when the test fixture is disposed.  
+- `GetValue<T>` overloads perform no null‑checking on the `QueryResult`; callers should ensure the result is non‑null.  
+- `AssertTableRowCount` and `AssertFirstRowValue<T>` rely on the test framework’s assertion mechanism; they throw `AssertFailedException` on failure.  
+- The helper methods assume the database schema matches the expectations of the tests; if the schema changes, the helper may need to be updated accordingly.
