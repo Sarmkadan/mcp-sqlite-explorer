@@ -38,7 +38,7 @@ public static class TestDatabaseJsonExtensions
     /// Deserializes a JSON string to a <see cref="TestDatabase"/> instance.
     /// </summary>
     /// <param name="json">The JSON string to deserialize.</param>
-    /// <returns>The deserialized <see cref="TestDatabase"/> instance, or <see langword="null"/> if the JSON is empty.</returns>
+    /// <returns>The deserialized <see cref="TestDatabase"/> instance, or <see langword="null"/> if the JSON is empty or invalid.</returns>
     /// <exception cref="JsonException">Thrown when the JSON is invalid or cannot be deserialized.</exception>
     public static TestDatabase? FromJson(string json)
     {
