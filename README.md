@@ -440,6 +440,86 @@ foreach (var statement in multiStatements)
 }
 ```
 
+## SqliteExplorerTests
+
+The `SqliteExplorerTests` class contains integration tests that verify the correctness of the `SqliteExplorer` class functionality. It tests core database operations including table listing, schema description, data sampling, and SELECT query execution to ensure the explorer behaves correctly with SQLite databases.
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+using McpSqliteExplorer.Tests;
+
+// Create a test instance
+var tests = new SqliteExplorerTests();
+
+// Create a test database fixture
+using var db = new TestDatabase();
+var explorer = new SqliteExplorer(db.Path);
+
+// Test listing tables - should return user tables and views but exclude internal SQLite tables
+var tables = explorer.ListTables();
+Console.WriteLine($"Found {tables.Count} tables");
+foreach (var table in tables)
+{
+    Console.WriteLine($" - {table.Name} ({table.Type})");
+}
+
+// Test describing a table - should return column metadata including primary keys and nullability
+var columns = explorer.DescribeTable("authors");
+foreach (var column in columns)
+{
+    Console.WriteLine($"Column: {column.Name}, Type: {column.Type}, PK: {column.PrimaryKey}, NotNull: {column.NotNull}");
+}
+
+// Test sampling rows - should return up to the specified limit
+var sample = explorer.SampleRows("books", limit: 2);
+Console.WriteLine($"Sampled {sample.Rows.Count} rows from books table");
+foreach (var row in sample.Rows)
+{
+    Console.WriteLine($" - {row[0]} ({row[1]})");
+}
+
+// Test running a SELECT query - should return matching rows
+var result = explorer.RunSelect("SELECT title, year FROM books WHERE author_id = 1 ORDER BY year;");
+Console.WriteLine($"Found {result.Rows.Count} books by author 1");
+
+// Test that the truncated flag is set when results exceed the limit
+var truncatedResult = explorer.RunSelect("SELECT * FROM books;", limit: 2);
+Console.WriteLine($"Truncated: {truncatedResult.Truncated}");
+
+// Test that CTEs are allowed in SELECT queries
+var cteResult = explorer.RunSelect(
+    "WITH old AS (SELECT * FROM books WHERE year < 1970) SELECT title FROM old ORDER BY title;");
+Console.WriteLine($"CTE query returned {cteResult.Rows.Count} rows");
+
+// Test that NULL values are correctly mapped
+var nullResult = explorer.RunSelect("SELECT country FROM authors WHERE id = 3;");
+Console.WriteLine($"NULL value: {nullResult.Rows[0][0]}");
+
+// Test that write statements are rejected
+try
+{
+    explorer.RunSelect("DELETE FROM books;");
+    Console.WriteLine("ERROR: Write statement should have been rejected!");
+}
+catch (ArgumentException)
+{
+    Console.WriteLine("Write statement correctly rejected");
+}
+
+// Test constructor with missing file
+try
+{
+    new SqliteExplorer("/tmp/nonexistent.db");
+    Console.WriteLine("ERROR: Constructor should have thrown!");
+}
+catch (FileNotFoundException)
+{
+    Console.WriteLine("Constructor correctly throws for missing file");
+}
+```
+
 ## SqliteExplorerTestsExtensions
 
 The `SqliteExplorerTestsExtensions` static class provides extension methods for `SqliteExplorerTests` that simplify common test scenarios such as creating test databases, extracting values from query results, and asserting table states. These extension methods provide fluent APIs for common test operations in the test suite.
