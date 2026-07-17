@@ -440,6 +440,46 @@ foreach (var statement in multiStatements)
 }
 ```
 
+## TestDatabaseJsonExtensions
+
+The `TestDatabaseJsonExtensions` static class provides JSON serialization and deserialization utilities for the `TestDatabase` class. It enables round-trip serialization of test database instances to JSON strings and back, including custom handling of the `SqliteConnectionStringBuilder` property through a dedicated JSON converter. This is particularly useful for persisting test database state or transferring it between test runs.
+
+
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer.Tests;
+using Microsoft.Data.Sqlite;
+
+// Create a test database instance
+using var db = new TestDatabase();
+
+// Serialize the test database to a compact JSON string
+var json = db.ToJson();
+Console.WriteLine(json);
+
+// Serialize with indentation for readability
+var prettyJson = db.ToJson(indented: true);
+Console.WriteLine(prettyJson);
+
+// Deserialize from JSON back to a TestDatabase instance
+var dbPath = "/tmp/test.db";
+var connectionString = new SqliteConnectionStringBuilder { DataSource = dbPath };
+var jsonWithConnection = $"{{ \"Path\": \"{dbPath}\", \"ConnectionString\": \"{connectionString}\"}};";
+var restoredDb = TestDatabaseJsonExtensions.FromJson(jsonWithConnection);
+
+// Attempt to deserialize with error handling
+if (TestDatabaseJsonExtensions.TryFromJson(json, out var deserializedDb))
+{
+    Console.WriteLine("Successfully deserialized test database");
+}
+else
+{
+    Console.WriteLine("Failed to deserialize test database");
+}
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
