@@ -1,5 +1,6 @@
 using System.Data;
 using System.Globalization;
+using System.Text;
 
 namespace McpSqliteExplorer;
 
@@ -32,22 +33,28 @@ public static class SqliteExplorerExtensions
     /// <param name="result">The query result.</param>
     /// <typeparam name="T">The expected type of the value.</typeparam>
     /// <returns>The value from the first column of the first row, or <c>default</c> if no rows.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
     /// <exception cref="InvalidCastException">Thrown if the value cannot be cast to <typeparamref name="T"/>.</exception>
+    /// <exception cref="FormatException">Thrown if the value cannot be parsed as <typeparamref name="T"/>.</exception>
     public static T? FirstValueAs<T>(
         this QueryResult result)
         where T : IParsable<T>
     {
         ArgumentNullException.ThrowIfNull(result);
+
         if (result.Rows.Count == 0)
             return default;
 
         var value = result.Rows[0][0];
+
         return value switch
         {
             null => default,
             T t => t,
             string s => T.Parse(s, CultureInfo.InvariantCulture),
-            _ => T.Parse(value.ToString()!, CultureInfo.InvariantCulture)
+            _ => value is not null
+                ? T.Parse(value.ToString()!, CultureInfo.InvariantCulture)
+                : throw new InvalidOperationException("Cannot parse null value.")
         };
     }
 
@@ -99,12 +106,13 @@ public static class SqliteExplorerExtensions
     /// <param name="pattern">The pattern to match (supports * and ? wildcards).</param>
     /// <returns>A list of table names matching the pattern.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="explorer"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="pattern"/> is empty or whitespace.</exception>
     public static IReadOnlyList<string> GetTablesMatching(
         this SqliteExplorer explorer,
         string pattern)
     {
         ArgumentNullException.ThrowIfNull(explorer);
-        ArgumentNullException.ThrowIfNull(pattern);
+        ArgumentNullException.ThrowIfNullOrWhiteSpace(pattern);
 
         var tables = explorer.ListTables();
         var patternLower = pattern.ToLowerInvariant();
@@ -120,10 +128,20 @@ public static class SqliteExplorerExtensions
         return results;
     }
 
+    /// <summary>
+    /// Determines whether the input string matches the wildcard pattern.
+    /// Supports <c>*</c> (matches any sequence) and <c>?</c> (matches any single character) wildcards.
+    /// </summary>
+    /// <param name="input">The string to match.</param>
+    /// <param name="pattern">The wildcard pattern to match against.</param>
+    /// <returns><c>true</c> if the input matches the pattern; otherwise, <c>false</c>.</returns>
     private static bool WildcardMatch(
         string input,
         string pattern)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(pattern);
+
         var i = 0;
         var j = 0;
         var inputLen = input.Length;
@@ -144,6 +162,7 @@ public static class SqliteExplorerExtensions
                         return true;
                     i++;
                 }
+
                 return j == patternLen;
             }
             else if (pattern[j] == '?' || input[i] == pattern[j])
