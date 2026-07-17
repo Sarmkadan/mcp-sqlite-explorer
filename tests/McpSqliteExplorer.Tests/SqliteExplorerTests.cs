@@ -1,7 +1,16 @@
 namespace McpSqliteExplorer.Tests;
 
+/// <summary>
+/// Contains integration tests for the <see cref="SqliteExplorer"/> class.
+/// Tests verify that the SQLite database explorer correctly interacts with SQLite databases,
+/// including listing tables, describing table schemas, sampling data, and executing SELECT queries.
+/// </summary>
 public sealed class SqliteExplorerTests
 {
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.ListTables"/> returns user-created tables and views
+    /// while excluding internal SQLite system tables (those starting with "sqlite_").
+    /// </summary>
     [Fact]
     public void ListTables_ReturnsUserTablesAndViews_ButNotSqliteInternals()
     {
@@ -20,6 +29,10 @@ public sealed class SqliteExplorerTests
         Assert.Equal("view", view.Type);
     }
 
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.DescribeTable"/> returns correct column metadata
+    /// including primary key status and nullability constraints for each column.
+    /// </summary>
     [Fact]
     public void DescribeTable_ReturnsColumnMetadata()
     {
@@ -39,6 +52,10 @@ public sealed class SqliteExplorerTests
         Assert.False(country.NotNull);
     }
 
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.DescribeTable"/> throws an <see cref="ArgumentException"/>
+    /// when attempting to describe a non-existent table.
+    /// </summary>
     [Fact]
     public void DescribeTable_UnknownTable_Throws()
     {
@@ -48,6 +65,10 @@ public sealed class SqliteExplorerTests
         Assert.Throws<ArgumentException>(() => explorer.DescribeTable("no_such_table"));
     }
 
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.SampleRows"/> respects the row limit parameter
+    /// and returns exactly the requested number of rows.
+    /// </summary>
     [Fact]
     public void SampleRows_RespectsLimit()
     {
@@ -61,6 +82,10 @@ public sealed class SqliteExplorerTests
         Assert.Contains("title", result.Columns);
     }
 
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.SampleRows"/> throws an <see cref="ArgumentException"/>
+    /// when attempting to sample rows from a non-existent table.
+    /// </summary>
     [Fact]
     public void SampleRows_UnknownTable_Throws()
     {
@@ -70,6 +95,10 @@ public sealed class SqliteExplorerTests
         Assert.Throws<ArgumentException>(() => explorer.SampleRows("ghost"));
     }
 
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.RunSelect"/> executes a SELECT query and returns
+    /// the matching rows with correct column values.
+    /// </summary>
     [Fact]
     public void RunSelect_ReturnsMatchingRows()
     {
@@ -84,6 +113,10 @@ public sealed class SqliteExplorerTests
         Assert.False(result.Truncated);
     }
 
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.RunSelect"/> sets the <see cref="QueryResult.Truncated"/> flag to true
+    /// when the query result exceeds the row limit and is truncated.
+    /// </summary>
     [Fact]
     public void RunSelect_SetsTruncatedFlag_WhenResultExceedsCap()
     {
@@ -97,6 +130,10 @@ public sealed class SqliteExplorerTests
         Assert.True(result.Truncated);
     }
 
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.RunSelect"/> allows Common Table Expressions (CTEs)
+    /// in SELECT queries and correctly processes them.
+    /// </summary>
     [Fact]
     public void RunSelect_WithCte_IsAllowed()
     {
@@ -112,6 +149,10 @@ public sealed class SqliteExplorerTests
         Assert.Equal("Solaris", result.Rows[1][0]);
     }
 
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.RunSelect"/> correctly maps NULL values from the database
+    /// to null in the result rows.
+    /// </summary>
     [Fact]
     public void RunSelect_NullValues_MapToNull()
     {
@@ -124,6 +165,10 @@ public sealed class SqliteExplorerTests
         Assert.Null(result.Rows[0][0]);
     }
 
+    /// <summary>
+    /// Tests that <see cref="SqliteExplorer.RunSelect"/> rejects write statements (INSERT, UPDATE, DELETE, etc.)
+    /// by throwing an <see cref="ArgumentException"/> before execution.
+    /// </summary>
     [Fact]
     public void RunSelect_WriteStatement_IsRejectedBeforeExecution()
     {
@@ -138,6 +183,10 @@ public sealed class SqliteExplorerTests
         Assert.Equal(3L, Convert.ToInt64(result.Rows[0][0]));
     }
 
+    /// <summary>
+    /// Tests that the <see cref="SqliteExplorer"/> constructor throws a <see cref="FileNotFoundException"/>
+    /// when initialized with a path to a non-existent database file.
+    /// </summary>
     [Fact]
     public void Constructor_MissingFile_Throws()
     {
