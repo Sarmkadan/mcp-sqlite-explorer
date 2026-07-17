@@ -10,7 +10,7 @@ namespace McpSqliteExplorer;
 /// database, and non-SELECT statements are rejected before they ever reach the
 /// engine.
 /// </summary>
-public sealed class SqliteExplorer
+public sealed partial class SqliteExplorer
 {
     private readonly string _connectionString;
 
@@ -116,6 +116,18 @@ public sealed class SqliteExplorer
     }
 
     private QueryResult ExecuteReadOnly(string sql, int cap)
+    {
+        try
+        {
+            return ExecuteReadOnlyCore(sql, cap);
+        }
+        catch (SqliteException ex)
+        {
+            throw new InvalidOperationException(DescribeSqliteError(ex), ex);
+        }
+    }
+
+    private QueryResult ExecuteReadOnlyCore(string sql, int cap)
     {
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
@@ -261,6 +273,33 @@ public sealed class SqliteExplorer
         }
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Translates a raw <see cref="SqliteException"/> into a message that tells the
+    /// calling agent what went wrong and, where possible, which tool to use next.
+    /// </summary>
+    internal static string DescribeSqliteError(SqliteException ex)
+    {
+        var message = ex.Message;
+
+        if (message.Contains("no such table", StringComparison.OrdinalIgnoreCase))
+            return $"{message}. Use list_tables to see the tables and views that exist in this database.";
+
+        if (message.Contains("no such column", StringComparison.OrdinalIgnoreCase))
+            return $"{message}. Use describe_table to see the columns of the table you are querying.";
+
+        if (message.Contains("no such function", StringComparison.OrdinalIgnoreCase))
+            return $"{message}. Only SQLite's built-in SQL functions are available here.";
+
+        return ex.SqliteErrorCode switch
+        {
+            5 or 6 => $"{message}. The database is locked by another process; retry once the writer has finished.",
+            11 => $"{message}. The database file appears to be corrupted; run 'PRAGMA integrity_check' with the sqlite3 CLI to confirm.",
+            14 => $"{message}. The database file could not be opened; check that the path is correct and readable.",
+            26 => $"{message}. The file exists but is not a SQLite database (or is encrypted).",
+            _ => message,
+        };
     }
 
     private static string QuoteIdentifier(string identifier) =>
