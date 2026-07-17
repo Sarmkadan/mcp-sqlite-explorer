@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
+using System.Linq;
 
 namespace McpSqliteExplorer;
 
@@ -12,6 +12,10 @@ public static class SqliteExplorerValidation
     /// <summary>
     /// Validates the supplied <see cref="SqliteExplorer"/> instance and returns a list of human-readable problems.
     /// </summary>
+    /// <remarks>
+    /// <see cref="SqliteExplorer"/> instances themselves have no mutable state to validate.
+    /// Validation is performed on the records returned by explorer operations.
+    /// </remarks>
     /// <param name="value">The explorer instance to validate.</param>
     /// <returns>
     /// An <see cref="IReadOnlyList{T}"/> of problem descriptions.
@@ -21,13 +25,7 @@ public static class SqliteExplorerValidation
     public static IReadOnlyList<string> Validate(this SqliteExplorer value)
     {
         ArgumentNullException.ThrowIfNull(value);
-
-        var problems = new List<string>();
-
-        // SqliteExplorer itself has no state to validate beyond null check
-        // The validation is in the records it returns
-
-        return problems;
+        return Array.Empty<string>();
     }
 
     /// <summary>
@@ -36,8 +34,7 @@ public static class SqliteExplorerValidation
     /// <param name="value">The explorer instance to check.</param>
     /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
-    public static bool IsValid(this SqliteExplorer value) =>
-        !value.Validate().Any();
+    public static bool IsValid(this SqliteExplorer value) => value is not null && !value.Validate().Any();
 
     /// <summary>
     /// Ensures that the supplied <see cref="SqliteExplorer"/> instance is valid.
@@ -51,13 +48,7 @@ public static class SqliteExplorerValidation
     public static void EnsureValid(this SqliteExplorer value)
     {
         ArgumentNullException.ThrowIfNull(value);
-
-        var problems = value.Validate();
-        if (problems.Count > 0)
-        {
-            var message = $"SqliteExplorer instance is invalid: {string.Join("; ", problems)}";
-            throw new ArgumentException(message, nameof(value));
-        }
+        _ = value.Validate(); // Validate call already includes null check
     }
 
     /// <summary>
@@ -92,8 +83,7 @@ public static class SqliteExplorerValidation
     /// <param name="value">The table info to check.</param>
     /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
-    public static bool IsValid(this TableInfo value) =>
-        !value.Validate().Any();
+    public static bool IsValid(this TableInfo value) => value.Validate().Count == 0;
 
     /// <summary>
     /// Ensures that the supplied <see cref="TableInfo"/> record is valid.
@@ -137,7 +127,6 @@ public static class SqliteExplorerValidation
         if (string.IsNullOrWhiteSpace(value.Type))
             problems.Add("ColumnInfo.Type must not be null or whitespace");
 
-        // NotNull, PrimaryKey are booleans - no validation needed
         // DefaultValue can be null, but if not null should be non-empty
         if (value.DefaultValue is not null && string.IsNullOrWhiteSpace(value.DefaultValue))
             problems.Add("ColumnInfo.DefaultValue must not be empty if specified");
@@ -151,8 +140,7 @@ public static class SqliteExplorerValidation
     /// <param name="value">The column info to check.</param>
     /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
-    public static bool IsValid(this ColumnInfo value) =>
-        !value.Validate().Any();
+    public static bool IsValid(this ColumnInfo value) => value.Validate().Count == 0;
 
     /// <summary>
     /// Ensures that the supplied <see cref="ColumnInfo"/> record is valid.
@@ -227,8 +215,6 @@ public static class SqliteExplorerValidation
         else if (value.AppliedRowCap > SqliteExplorer.MaxRowCap)
             problems.Add($"QueryResult.AppliedRowCap must not exceed {SqliteExplorer.MaxRowCap}");
 
-        // Truncated is a boolean - no validation needed
-
         return problems;
     }
 
@@ -238,8 +224,7 @@ public static class SqliteExplorerValidation
     /// <param name="value">The query result to check.</param>
     /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
-    public static bool IsValid(this QueryResult value) =>
-        !value.Validate().Any();
+    public static bool IsValid(this QueryResult value) => value.Validate().Count == 0;
 
     /// <summary>
     /// Ensures that the supplied <see cref="QueryResult"/> record is valid.
