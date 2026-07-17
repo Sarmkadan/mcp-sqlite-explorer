@@ -11,6 +11,8 @@ namespace McpSqliteExplorer;
 /// </summary>
 public static class SqliteToolsExtensions
 {
+    private sealed record ColumnInfo(string Table, string TableType, string Column, string Type, bool NotNull, bool PrimaryKey);
+
     /// <summary>
     /// Gets the count of tables and views in the database.
     /// </summary>
@@ -21,8 +23,7 @@ public static class SqliteToolsExtensions
     {
         ArgumentNullException.ThrowIfNull(explorer);
 
-        var tablesResult = SqliteTools.ListTables(explorer);
-        return tablesResult;
+        return SqliteTools.ListTables(explorer);
     }
 
     /// <summary>
@@ -33,6 +34,7 @@ public static class SqliteToolsExtensions
     /// <returns>A JSON string containing the row count.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="explorer"/> or <paramref name="table"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="table"/> is empty or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when SQL execution fails.</exception>
     public static string GetRowCount(this SqliteExplorer explorer, string table)
     {
         ArgumentNullException.ThrowIfNull(explorer);
@@ -49,6 +51,7 @@ public static class SqliteToolsExtensions
     /// <param name="explorer">The SQL explorer instance.</param>
     /// <returns>A JSON string containing all column information.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="explorer"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when JSON parsing fails or required properties are missing.</exception>
     public static string GetAllColumns(this SqliteExplorer explorer)
     {
         ArgumentNullException.ThrowIfNull(explorer);
@@ -58,7 +61,7 @@ public static class SqliteToolsExtensions
             System.Text.Json.JsonElement>(tablesResult);
 
         var tables = tablesPayload.GetProperty("tables");
-        var allColumns = new List<object>();
+        var allColumns = new List<ColumnInfo>();
 
         foreach (var table in tables.EnumerateArray())
         {
@@ -71,15 +74,13 @@ public static class SqliteToolsExtensions
 
             foreach (var column in columns.EnumerateArray())
             {
-                allColumns.Add(new
-                {
-                    table = tableName,
-                    tableType = tableType,
-                    column = column.GetProperty("name").GetString(),
-                    type = column.GetProperty("type").GetString(),
-                    notNull = column.GetProperty("notNull").GetBoolean(),
-                    primaryKey = column.GetProperty("primaryKey").GetBoolean()
-                });
+                allColumns.Add(new ColumnInfo(
+                    tableName ?? string.Empty,
+                    tableType ?? string.Empty,
+                    column.GetProperty("name").GetString() ?? string.Empty,
+                    column.GetProperty("type").GetString() ?? string.Empty,
+                    column.GetProperty("notNull").GetBoolean(),
+                    column.GetProperty("primaryKey").GetBoolean()));
             }
         }
 
@@ -92,6 +93,7 @@ public static class SqliteToolsExtensions
     /// <param name="explorer">The SQL explorer instance.</param>
     /// <returns>A JSON string containing comprehensive schema summary.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="explorer"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when JSON parsing fails or required properties are missing.</exception>
     public static string GetSchemaSummary(this SqliteExplorer explorer)
     {
         ArgumentNullException.ThrowIfNull(explorer);
@@ -126,4 +128,5 @@ public static class SqliteToolsExtensions
             totalObjects = tables.GetArrayLength()
         });
     }
+
 }
