@@ -235,6 +235,53 @@ foreach (var suggestion in suggestions)
 }
 ```
 
+## SqliteExplorerValidation
+
+The `SqliteExplorerValidation` static class provides validation extension methods for the core record types returned by `SqliteExplorer` operations. It helps ensure data integrity by validating that records like `TableInfo`, `ColumnInfo`, and `QueryResult` contain valid, non-null values before they are used in downstream processing or serialization.
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+
+var dbPath = "/path/to/your/database.db";
+var explorer = new SqliteExplorer(dbPath);
+
+// Get table information
+var tables = explorer.ListTables();
+
+// Validate each table info record before using it
+foreach (var table in tables)
+{
+    var validationErrors = table.Validate();
+    if (validationErrors.Any())
+    {
+        Console.WriteLine($"Table {table.Name} has validation errors:");
+        foreach (var error in validationErrors)
+        {
+            Console.WriteLine($"  - {error}");
+        }
+    }
+    else
+    {
+        Console.WriteLine($"Table {table.Name} is valid");
+    }
+}
+
+// Use the convenience methods for quick validation checks
+if (!tables.First().IsValid())
+{
+    Console.WriteLine("First table is invalid!");
+}
+
+// Throw an exception if validation fails
+tables.First().EnsureValid();
+
+// Validate query results before processing
+var result = explorer.RunSelect("SELECT * FROM users LIMIT 10");
+result.EnsureValid(); // Throws if result contains invalid data
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
