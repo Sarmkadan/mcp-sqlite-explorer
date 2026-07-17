@@ -378,6 +378,68 @@ if (info.HasHistoryTable)
 }
 ```
 
+## SqlGuardTestsExtensions
+
+The `SqlGuardTestsExtensions` static class provides a collection of extension methods for `SqlGuardTests` that generate test data for validating SQL guard behavior. These methods return pre-defined lists of SQL statements categorized by their expected behavior (allowed reads, rejected writes, CTE writes, limit clamping, empty statements, and multi-statements), making it easy to write comprehensive tests for SQL statement validation and guard clause functionality.
+
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer.Tests;
+
+// Create a guard instance for extension methods
+var guard = new SqlGuardTests();
+
+// Get allowed read statements for testing select-only guards
+var allowedReads = guard.GetAllowedReadStatements();
+Console.WriteLine($"Found {allowedReads.Count} allowed read statements");
+foreach (var statement in allowedReads)
+{
+    Console.WriteLine($"  - {statement}");
+}
+
+// Get rejected write statements for testing guard rejection
+var rejectedWrites = guard.GetRejectedWriteStatements();
+Console.WriteLine($"Found {rejectedWrites.Count} rejected write statements");
+foreach (var statement in rejectedWrites)
+{
+    Console.WriteLine($"  - {statement}");
+}
+
+// Get statements with CTE-based writes that should be rejected
+var rejectedCteWrites = guard.GetRejectedCteWriteStatements();
+Console.WriteLine($"Found {rejectedCteWrites.Count} CTE write statements");
+foreach (var statement in rejectedCteWrites)
+{
+    Console.WriteLine($"  - {statement}");
+}
+
+// Get statements with various limit values for testing clamp functionality
+var limitStatements = guard.GetLimitStatements();
+Console.WriteLine($"Found {limitStatements.Count} limit statements");
+foreach (var (statement, original, clamped) in limitStatements)
+{
+    Console.WriteLine($"  - {statement} (original: {original}, clamped: {clamped})");
+}
+
+// Get empty statements that should be rejected
+var emptyStatements = guard.GetEmptyStatements();
+Console.WriteLine($"Found {emptyStatements.Count} empty statements");
+foreach (var statement in emptyStatements)
+{
+    Console.WriteLine($"  - '{statement}'");
+}
+
+// Get multi-statements that should be rejected
+var multiStatements = guard.GetMultiStatements();
+Console.WriteLine($"Found {multiStatements.Count} multi-statements");
+foreach (var statement in multiStatements)
+{
+    Console.WriteLine($"  - {statement}");
+}
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
