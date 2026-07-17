@@ -322,6 +322,62 @@ foreach (var table in userTables)
 }
 ```
 
+## SqliteExplorerAnalysisTests
+
+The `SqliteExplorerAnalysisTests` class contains integration tests that verify the correctness of SQLite database analysis features. It tests query plan analysis, table profiling, statistics gathering, index suggestions, and migration history detection to ensure all analysis tools work as expected.
+
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+using McpSqliteExplorer.Tests;
+
+// Create a test database fixture
+using var db = new TestDatabase();
+var explorer = new SqliteExplorer(db.Path);
+
+// Test that ExplainQueryPlan correctly identifies index usage
+var plan = explorer.ExplainQueryPlan("SELECT * FROM books WHERE year = 1974;");
+Assert.Contains(plan, n => n.Detail.Contains("idx_books_year", StringComparison.OrdinalIgnoreCase));
+
+// Test that ExplainQueryPlan detects full table scans
+var scanPlan = explorer.ExplainQueryPlan("SELECT * FROM books WHERE title = 'Solaris'");
+Assert.Contains(scanPlan, n => n.Detail.StartsWith("SCAN", StringComparison.OrdinalIgnoreCase));
+
+// Test that ProfileTable computes null rates and cardinality
+var profile = explorer.ProfileTable("authors");
+Assert.Equal(3, profile.RowCount);
+var country = profile.Columns.Single(c => c.Name == "country");
+Assert.Equal(1, country.NullCount);
+Assert.Equal(0.3333, country.NullRate);
+
+// Test that GetTableStats counts rows, columns, and indexes
+var stats = explorer.GetTableStats();
+var books = stats.Single(s => s.Table == "books");
+Assert.Equal(3, books.RowCount);
+Assert.Equal(4, books.ColumnCount);
+Assert.Equal(1, books.IndexCount);
+
+// Test that SuggestIndexes proposes indexes for unindexed columns
+var suggestions = explorer.SuggestIndexes("SELECT * FROM books WHERE title = 'Solaris'")
+    .ToList();
+if (suggestions.Any())
+{
+    var suggestion = suggestions.First();
+    Assert.Equal("books", suggestion.Table);
+    Assert.Contains("title", suggestion.Columns);
+    Assert.Contains("CREATE INDEX", suggestion.ProposedSql);
+}
+
+// Test that GetMigrationHistory detects EF Core migration history
+var info = explorer.GetMigrationHistory();
+if (info.HasHistoryTable)
+{
+    Console.WriteLine($"Found {info.Migrations.Count} migrations");
+}
+```
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
