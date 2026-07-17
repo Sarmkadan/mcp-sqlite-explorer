@@ -378,6 +378,46 @@ if (info.HasHistoryTable)
 }
 ```
 
+## SqlGuardTests
+
+The `SqlGuardTests` class contains unit tests that verify the SELECT-only guard logic in `SqliteExplorer`. It tests that read-only `SELECT` statements are allowed while write statements, batched statements, DDL, DML, and statements hidden behind CTEs are properly rejected. It also validates that row limits are correctly clamped to the allowed range (1–1000).
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+using McpSqliteExplorer.Tests;
+
+// Create a test instance
+var guardTests = new SqlGuardTests();
+
+// Test that read-only SELECT statements are allowed
+guardTests.GuardSelectOnly_AllowsReadStatements("SELECT * FROM users WHERE id = 1");
+guardTests.GuardSelectOnly_AllowsReadStatements("WITH cte AS (SELECT 1) SELECT * FROM cte");
+
+// Test that write statements are rejected
+Assert.Throws<ArgumentException>(() => 
+guardTests.GuardSelectOnly_RejectsWriteStatements("DELETE FROM users"));
+
+// Test that batched statements are rejected
+Assert.Throws<ArgumentException>(() => 
+guardTests.GuardSelectOnly_RejectsMultipleStatements("SELECT 1; DROP TABLE users"));
+
+// Test that write statements hidden behind CTEs are rejected
+Assert.Throws<ArgumentException>(() => 
+guardTests.GuardSelectOnly_RejectsWriteHiddenBehindCte());
+
+// Test that empty statements are rejected
+Assert.Throws<ArgumentException>(() => 
+guardTests.GuardSelectOnly_RejectsEmpty(" "));
+
+// Test that row limits are properly clamped
+Assert.Equal(100, SqliteExplorer.ClampLimit(0));
+Assert.Equal(100, SqliteExplorer.ClampLimit(-5));
+Assert.Equal(50, SqliteExplorer.ClampLimit(50));
+Assert.Equal(1000, SqliteExplorer.ClampLimit(5000));
+```
+
 ## SqlGuardTestsExtensions
 
 The `SqlGuardTestsExtensions` static class provides a collection of extension methods for `SqlGuardTests` that generate test data for validating SQL guard behavior. These methods return pre-defined lists of SQL statements categorized by their expected behavior (allowed reads, rejected writes, CTE writes, limit clamping, empty statements, and multi-statements), making it easy to write comprehensive tests for SQL statement validation and guard clause functionality.
