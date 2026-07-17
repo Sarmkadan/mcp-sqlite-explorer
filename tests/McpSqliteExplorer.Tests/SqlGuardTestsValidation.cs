@@ -24,7 +24,7 @@ public static class SqlGuardTestsValidation
 
         // SqlGuardTests is a test class with no state to validate.
         // Returning an empty list signals that the instance is valid.
-        return Array.Empty<string>();
+        return [];
     }
 
     /// <summary>
@@ -34,7 +34,9 @@ public static class SqlGuardTestsValidation
     /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
     public static bool IsValid(this SqlGuardTests value) =>
-        !value.Validate().Any();
+        value is null
+            ? throw new ArgumentNullException(nameof(value))
+            : !value.Validate().Any();
 
     /// <summary>
     /// Ensures that the supplied <see cref="SqlGuardTests"/> instance is valid.
