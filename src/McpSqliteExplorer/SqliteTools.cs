@@ -58,7 +58,7 @@ public sealed class SqliteTools
     /// <c>{ "error": ... }</c> payload so the calling agent gets an actionable
     /// message instead of an opaque framework error.
     /// </summary>
-    private static string Guarded(Func<object> body)
+    internal static string Guarded(Func<object> body)
     {
         try
         {
@@ -92,6 +92,6 @@ public sealed class SqliteTools
         };
     }
 
-    private static string Serialize(object payload) =>
+    internal static string Serialize(object payload) =>
         JsonSerializer.Serialize(payload, JsonOptions);
 }
