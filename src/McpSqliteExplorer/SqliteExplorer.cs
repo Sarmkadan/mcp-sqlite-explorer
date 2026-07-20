@@ -115,6 +115,48 @@ public sealed partial class SqliteExplorer
         return ExecuteReadOnly(sql, cap);
     }
 
+    /// <summary>
+    /// Returns basic statistics for a table: total row count and, for the first
+    /// up‑to‑20 columns, the number of rows where that column is NULL.
+    /// </summary>
+    public TableStatsResult TableStats(string table)
+    {
+        var safeName = RequireExistingTable(table);
+
+        // Get column information and limit to the first 20 columns.
+        var allColumns = DescribeTable(table);
+        var columns = allColumns.Take(20).ToList();
+
+        // Build a single aggregated query that returns the row count and the NULL
+        // count for each of the selected columns.
+        var sb = new StringBuilder();
+        sb.Append("SELECT COUNT(*) AS rowCount");
+        foreach (var col in columns)
+        {
+            // Use a CASE expression to count NULLs per column.
+            sb.Append($", SUM(CASE WHEN {QuoteIdentifier(col.Name)} IS NULL THEN 1 ELSE 0 END) AS {QuoteIdentifier(col.Name)}_nulls");
+        }
+        sb.Append($" FROM {QuoteIdentifier(safeName)};");
+
+        var sql = sb.ToString();
+
+        // Execute the query (it is read‑only by construction).
+        var result = ExecuteReadOnlyCore(sql, DefaultRowCap);
+
+        // The result will contain exactly one row.
+        var row = result.Rows[0];
+        var rowCount = Convert.ToInt32(row[0]);
+
+        var columnStats = new List<ColumnStat>();
+        for (int i = 0; i < columns.Count; i++)
+        {
+            var nullCount = Convert.ToInt32(row[i + 1]);
+            columnStats.Add(new ColumnStat(columns[i].Name, nullCount));
+        }
+
+        return new TableStatsResult(rowCount, columnStats);
+    }
+
     private QueryResult ExecuteReadOnly(string sql, int cap)
     {
         try
@@ -320,3 +362,7 @@ public sealed record QueryResult(
     IReadOnlyList<IReadOnlyList<object?>> Rows,
     int AppliedRowCap,
     bool Truncated);
+
+public sealed record ColumnStat(string Name, int NullCount);
+
+public sealed record TableStatsResult(int RowCount, IReadOnlyList<ColumnStat> ColumnStats);

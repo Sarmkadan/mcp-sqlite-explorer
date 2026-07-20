@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
@@ -36,16 +37,16 @@ public sealed class SqliteTools
             return new { table, columnCount = columns.Count, columns };
         });
 
-  [McpServerTool(Name = "list_indexes")]
-  [Description("List the indexes defined on a table or view, including uniqueness, origin, partial flag and the indexed columns.")]
-  public static string ListIndexes(
-    SqliteExplorer explorer,
-    [Description("Name of the table or view whose indexes should be listed.")] string table) =>
-    Guarded(() =>
-    {
-      var indexes = explorer.ListIndexes(table);
-      return new { table, indexCount = indexes.Count, indexes };
-    });
+    [McpServerTool(Name = "list_indexes")]
+    [Description("List the indexes defined on a table or view, including uniqueness, origin, partial flag and the indexed columns.")]
+    public static string ListIndexes(
+        SqliteExplorer explorer,
+        [Description("Name of the table or view whose indexes should be listed.")] string table) =>
+        Guarded(() =>
+        {
+            var indexes = explorer.ListIndexes(table);
+            return new { table, indexCount = indexes.Count, indexes };
+        });
 
     [McpServerTool(Name = "sample_rows")]
     [Description("Return a small sample of rows from a table so the agent can see representative data.")]
@@ -62,6 +63,22 @@ public sealed class SqliteTools
         [Description("A single SELECT or WITH ... SELECT statement. No INSERT/UPDATE/DELETE/DDL and no multiple statements.")] string sql,
         [Description("Maximum number of rows to return (1-1000, default 100).")] int limit = SqliteExplorer.DefaultRowCap) =>
         Guarded(() => ToPayload(explorer.RunSelect(sql, limit)));
+
+    [McpServerTool(Name = "table_stats")]
+    [Description("Return basic statistics for a table: total row count and, for the first up‑to‑20 columns, the number of NULL values per column.")]
+    public static string TableStats(
+        SqliteExplorer explorer,
+        [Description("Name of the table or view to analyse.")] string table) =>
+        Guarded(() =>
+        {
+            var stats = explorer.TableStats(table);
+            return new
+            {
+                table,
+                rowCount = stats.RowCount,
+                columnStats = stats.ColumnStats
+            };
+        });
 
     /// <summary>
     /// Runs a tool body and serialises its result. Validation and lookup failures
