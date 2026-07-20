@@ -192,6 +192,35 @@ var chain = await tools.ForeignKeyChain("orders", maxDepth: 2);
 Console.WriteLine($"Found {chain.Tables.Count} related tables");
 ```
 
+## SqliteTools
+
+The `SqliteTools` class is the main entry point for the MCP tool surface. It exposes thin adapters around `SqliteExplorer` methods, shaping results into JSON payloads that MCP clients and agents can easily parse and consume.
+
+### Usage example
+
+```csharp
+using McpSqliteExplorer;
+
+var dbPath = "/path/to/your/database.db";
+var explorer = new SqliteExplorer(dbPath);
+
+// List all user tables
+var tablesJson = SqliteTools.ListTables(explorer);
+Console.WriteLine(tablesJson);
+
+// Describe a specific table
+var schemaJson = SqliteTools.DescribeTable(explorer, "users");
+Console.WriteLine(schemaJson);
+
+// Get a sample of rows
+var sampleJson = SqliteTools.SampleRows(explorer, "users", limit: 5);
+Console.WriteLine(sampleJson);
+
+// Run a select query
+var resultJson = SqliteTools.RunSelect(explorer, "SELECT * FROM users WHERE id > 10");
+Console.WriteLine(resultJson);
+```
+
 ## SqliteExplorer
 
 The `SqliteExplorer` class is the core analysis engine that provides read-only database exploration capabilities. It offers methods to examine query execution plans, profile table data distributions, gather table statistics, and suggest performance improvements through indexes. All operations are performed on a read-only connection, ensuring the database remains unmodified.
