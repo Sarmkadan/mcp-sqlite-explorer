@@ -36,6 +36,17 @@ public sealed class SqliteTools
             return new { table, columnCount = columns.Count, columns };
         });
 
+  [McpServerTool(Name = "list_indexes")]
+  [Description("List the indexes defined on a table or view, including uniqueness, origin, partial flag and the indexed columns.")]
+  public static string ListIndexes(
+    SqliteExplorer explorer,
+    [Description("Name of the table or view whose indexes should be listed.")] string table) =>
+    Guarded(() =>
+    {
+      var indexes = explorer.ListIndexes(table);
+      return new { table, indexCount = indexes.Count, indexes };
+    });
+
     [McpServerTool(Name = "sample_rows")]
     [Description("Return a small sample of rows from a table so the agent can see representative data.")]
     public static string SampleRows(
