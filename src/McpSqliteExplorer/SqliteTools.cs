@@ -64,6 +64,17 @@ public sealed class SqliteTools
         [Description("Maximum number of rows to return (1-1000, default 100).")] int limit = SqliteExplorer.DefaultRowCap) =>
         Guarded(() => ToPayload(explorer.RunSelect(sql, limit)));
 
+    [McpServerTool(Name = "explain_query")]
+    [Description("Run EXPLAIN QUERY PLAN for a SELECT statement and return the execution plan.")]
+    public static string ExplainQuery(
+        SqliteExplorer explorer,
+        [Description("A single SELECT statement to analyze. Only SELECT statements are permitted.")] string sql) =>
+    Guarded(() =>
+    {
+        var plan = explorer.ExplainQueryPlan(sql);
+        return new { planCount = plan.Count, plan };
+    });
+
     [McpServerTool(Name = "table_stats")]
     [Description("Return basic statistics for a table: total row count and, for the first up‑to‑20 columns, the number of NULL values per column.")]
     public static string TableStats(
