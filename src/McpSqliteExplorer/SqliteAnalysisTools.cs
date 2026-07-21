@@ -15,12 +15,19 @@ public sealed class SqliteAnalysisTools
     [Description("List the indexes on a table: name, uniqueness, origin (explicit, UNIQUE constraint or primary key), partial flag and indexed columns.")]
     public static string ListIndexes(
         SqliteExplorer explorer,
-        [Description("Name of the table whose indexes to list.")] string table) =>
-        SqliteTools.Guarded(() =>
+        [Description("Name of the table whose indexes to list.")] string table)
+    {
+        if (explorer == null)
+            throw new ArgumentNullException(nameof(explorer));
+        if (table == null)
+            throw new ArgumentNullException(nameof(table));
+
+        return SqliteTools.Guarded(() =>
         {
             var indexes = explorer.ListIndexes(table);
             return new { table, count = indexes.Count, indexes };
         });
+    }
 
     [McpServerTool(Name = "list_foreign_keys")]
     [Description("List the foreign keys declared on a table: referencing column, referenced table/column, and ON UPDATE / ON DELETE actions.")]

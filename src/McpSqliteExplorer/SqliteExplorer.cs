@@ -180,7 +180,7 @@ public sealed partial class SqliteExplorer : IDisposable
         foreach (var col in columns)
         {
             // Use a CASE expression to count NULLs per column.
-            sb.Append($", SUM(CASE WHEN {QuoteIdentifier(col.Name)} IS NULL THEN 1 ELSE 0 END) AS {QuoteIdentifier(col.Name)}_nulls");
+            sb.Append($", SUM(CASE WHEN {QuoteIdentifier(col.Name)} IS NULL THEN 1 ELSE 0 END) AS {QuoteIdentifier(col.Name + "_nulls")}");
         }
         sb.Append($" FROM {QuoteIdentifier(safeName)};");
 
