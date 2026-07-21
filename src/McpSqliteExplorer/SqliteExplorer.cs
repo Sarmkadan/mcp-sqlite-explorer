@@ -15,9 +15,18 @@ namespace McpSqliteExplorer;
 /// database, and non-SELECT statements are rejected before they ever reach the
 /// engine.
 /// </summary>
-public sealed partial class SqliteExplorer
+public sealed partial class SqliteExplorer : IDisposable
 {
     private readonly string _connectionString;
+    private bool _disposed;
+
+    /// <summary>
+    /// Finalizer to ensure resources are released if Dispose is not called.
+    /// </summary>
+    ~SqliteExplorer()
+    {
+        Dispose(false);
+    }
 
     /// <summary>Hard cap on rows returned by any query, regardless of caller input.</summary>
     public const int MaxRowCap = 1000;
@@ -47,6 +56,33 @@ public sealed partial class SqliteExplorer
             Cache = SqliteCacheMode.Shared,
         }.ToString();
     }
+
+        /// <summary>
+        /// Disposes the SqliteExplorer and cleans up any resources.
+        /// </summary>
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Disposes resources.
+        /// </summary>
+        /// <param name="disposing">True if called from Dispose, false if called from finalizer.</param>
+        private void Dispose(bool disposing)
+        {
+            if (_disposed)
+                return;
+
+            if (disposing)
+            {
+                // Dispose managed resources
+            }
+
+            // No unmanaged resources to dispose in this class
+            _disposed = true;
+        }
 
     private SqliteConnection OpenConnection()
     {
