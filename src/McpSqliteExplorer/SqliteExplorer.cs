@@ -1,5 +1,10 @@
+using System;
+using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 
 namespace McpSqliteExplorer;
@@ -19,6 +24,11 @@ public sealed partial class SqliteExplorer
 
     /// <summary>Default row cap when the caller does not specify one.</summary>
     public const int DefaultRowCap = 100;
+
+    /// <summary>
+    /// Configurable query timeout in seconds. Default is 10 seconds.
+    /// </summary>
+    public int QueryTimeoutSeconds { get; set; } = 10;
 
     public SqliteExplorer(string databasePath)
     {
@@ -175,27 +185,48 @@ public sealed partial class SqliteExplorer
         using var command = connection.CreateCommand();
         command.CommandText = sql;
 
+        // Apply the configurable timeout (in seconds) to the command.
+        command.CommandTimeout = QueryTimeoutSeconds;
+
+        // Use a CancellationTokenSource to enforce the same timeout for async execution.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(QueryTimeoutSeconds));
+
         var columns = new List<string>();
         var rows = new List<IReadOnlyList<object?>>();
         var truncated = false;
 
-        using var reader = command.ExecuteReader(CommandBehavior.SingleResult);
-        for (var i = 0; i < reader.FieldCount; i++)
-            columns.Add(reader.GetName(i));
-
-        while (reader.Read())
+        try
         {
-            if (rows.Count >= cap)
-            {
-                truncated = true;
-                break;
-            }
+            // ExecuteReaderAsync respects the cancellation token.
+            using var reader = command.ExecuteReaderAsync(cts.Token).GetAwaiter().GetResult();
 
-            var values = new object?[reader.FieldCount];
             for (var i = 0; i < reader.FieldCount; i++)
-                values[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+                columns.Add(reader.GetName(i));
 
-            rows.Add(values);
+            while (reader.Read())
+            {
+                if (rows.Count >= cap)
+                {
+                    truncated = true;
+                    break;
+                }
+
+                var values = new object?[reader.FieldCount];
+                for (var i = 0; i < reader.FieldCount; i++)
+                    values[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+
+                rows.Add(values);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Translate cancellation into a clear timeout message.
+            throw new InvalidOperationException($"Query timed out after {QueryTimeoutSeconds} seconds.");
+        }
+        catch (TaskCanceledException)
+        {
+            // Same handling for TaskCanceledException which can surface from async APIs.
+            throw new InvalidOperationException($"Query timed out after {QueryTimeoutSeconds} seconds.");
         }
 
         return new QueryResult(columns, rows, cap, truncated);
