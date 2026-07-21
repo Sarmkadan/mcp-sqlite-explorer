@@ -150,7 +150,7 @@ public sealed partial class SqliteExplorer
 
         var sql = sb.ToString();
 
-        // Execute the query (it is read‑only by construction).
+        // Execute the query (it is read-only by construction).
         var result = ExecuteReadOnlyCore(sql, DefaultRowCap);
 
         // The result will contain exactly one row.
@@ -218,14 +218,15 @@ public sealed partial class SqliteExplorer
                 rows.Add(values);
             }
         }
-        catch (OperationCanceledException)
+        // Catch the more specific exception first, then the base.
+        catch (TaskCanceledException)
         {
             // Translate cancellation into a clear timeout message.
             throw new InvalidOperationException($"Query timed out after {QueryTimeoutSeconds} seconds.");
         }
-        catch (TaskCanceledException)
+        catch (OperationCanceledException)
         {
-            // Same handling for TaskCanceledException which can surface from async APIs.
+            // Translate cancellation into a clear timeout message.
             throw new InvalidOperationException($"Query timed out after {QueryTimeoutSeconds} seconds.");
         }
 
