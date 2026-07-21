@@ -129,4 +129,31 @@ public static class SqliteToolsExtensions
         });
     }
 
+    /// <summary>
+    /// Returns a random sample of rows from the specified table.
+    /// </summary>
+    /// <param name="explorer">The SQL explorer instance.</param>
+    /// <param name="table">The name of the table to sample.</param>
+    /// <param name="rowCount">Requested number of rows (capped at 100).</param>
+    /// <returns>A JSON string containing the sampled rows and column metadata.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="explorer"/> or <paramref name="table"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="table"/> is empty or whitespace.</exception>
+    public static string SampleTable(this SqliteExplorer explorer, string table, int rowCount = 10)
+    {
+        ArgumentNullException.ThrowIfNull(explorer);
+        ArgumentException.ThrowIfNullOrEmpty(table);
+
+        // Cap the requested row count at 100 as per the task description.
+        int capped = Math.Min(rowCount, 100);
+        if (capped <= 0)
+            capped = 1;
+
+        // Build a simple SELECT that orders by RANDOM() and limits the result set.
+        // The table name is quoted to avoid issues with reserved words or special characters.
+        var sql = $"SELECT * FROM \"{table}\" ORDER BY RANDOM() LIMIT {capped};";
+
+        // Re‑use the existing RunSelect tool which already formats the result as JSON
+        // with column names and row data.
+        return SqliteTools.RunSelect(explorer, sql, capped);
+    }
 }
