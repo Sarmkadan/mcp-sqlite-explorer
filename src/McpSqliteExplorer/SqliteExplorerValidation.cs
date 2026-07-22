@@ -193,7 +193,7 @@ public static class SqliteExplorerValidation
 
         if (value.Rows is null)
             problems.Add("QueryResult.Rows must not be null");
-        else
+        else if (value.Columns is not null && value.Columns.Count > 0)
         {
             // Validate each row has the correct number of columns
             foreach (var row in value.Rows)
