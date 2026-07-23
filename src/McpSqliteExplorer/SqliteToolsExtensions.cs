@@ -42,7 +42,7 @@ public static class SqliteToolsExtensions
 
         var sql = $"SELECT COUNT(*) AS row_count FROM {table};";
 
-        return SqliteTools.RunSelect(explorer, sql, 1);
+        return SqliteTools.RunSelect(explorer, sql, 1, 15);
     }
 
     /// <summary>
@@ -154,6 +154,6 @@ public static class SqliteToolsExtensions
 
         // Re‑use the existing RunSelect tool which already formats the result as JSON
         // with column names and row data.
-        return SqliteTools.RunSelect(explorer, sql, capped);
+        return SqliteTools.RunSelect(explorer, sql, capped, 15);
     }
 }

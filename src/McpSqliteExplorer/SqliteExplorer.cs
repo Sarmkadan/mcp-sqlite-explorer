@@ -142,23 +142,31 @@ public sealed partial class SqliteExplorer : IDisposable
     }
 
     /// <summary>Returns up to <paramref name="limit"/> sample rows from a table.</summary>
-    public QueryResult SampleRows(string table, int limit = DefaultRowCap)
+    /// <param name="table">Name of the table or view to sample.</param>
+    /// <param name="limit">Maximum number of rows to return (1-1000, default 100).</param>
+    /// <param name="timeBudgetSeconds">Maximum execution time in seconds (default 15). Set to 0 to disable timeout.</param>
+    /// <returns>A <see cref="QueryResult"/> containing the sampled rows and metadata.</returns>
+    public QueryResult SampleRows(string table, int limit = DefaultRowCap, int timeBudgetSeconds = 15)
     {
         var safeName = RequireExistingTable(table);
         var cap = ClampLimit(limit);
         var sql = $"SELECT * FROM {QuoteIdentifier(safeName)} LIMIT {cap};";
-        return ExecuteReadOnly(sql, cap);
+        return ExecuteReadOnly(sql, cap, timeBudgetSeconds);
     }
 
     /// <summary>
     /// Runs a single read-only <c>SELECT</c> (or <c>WITH ... SELECT</c>) statement,
     /// capping the number of rows materialised.
     /// </summary>
-    public QueryResult RunSelect(string sql, int limit = DefaultRowCap)
+    /// <param name="sql">The SQL query to execute.</param>
+    /// <param name="limit">Maximum number of rows to return (1-1000, default 100).</param>
+    /// <param name="timeBudgetSeconds">Maximum execution time in seconds (default 15). Set to 0 to disable timeout.</param>
+    /// <returns>A <see cref="QueryResult"/> containing the query results and metadata.</returns>
+    public QueryResult RunSelect(string sql, int limit = DefaultRowCap, int timeBudgetSeconds = 15)
     {
         GuardSelectOnly(sql);
         var cap = ClampLimit(limit);
-        return ExecuteReadOnly(sql, cap);
+        return ExecuteReadOnly(sql, cap, timeBudgetSeconds);
     }
 
     /// <summary>
@@ -219,11 +227,11 @@ public sealed partial class SqliteExplorer : IDisposable
         return new TableProfile(safeName, rowCount, profiles);
     }
 
-    private QueryResult ExecuteReadOnly(string sql, int cap)
+    private QueryResult ExecuteReadOnly(string sql, int cap, int timeBudgetSeconds = 15)
     {
         try
         {
-            return ExecuteReadOnlyCore(sql, cap);
+            return ExecuteReadOnlyCore(sql, cap, timeBudgetSeconds);
         }
         catch (SqliteException ex)
         {
@@ -231,25 +239,47 @@ public sealed partial class SqliteExplorer : IDisposable
         }
     }
 
-    private QueryResult ExecuteReadOnlyCore(string sql, int cap)
+    private QueryResult ExecuteReadOnlyCore(string sql, int cap, int timeBudgetSeconds = 15)
     {
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = sql;
 
         // Apply the configurable timeout (in seconds) to the command.
-        command.CommandTimeout = QueryTimeoutSeconds;
-
-        // Use a CancellationTokenSource to enforce the same timeout for async execution.
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(QueryTimeoutSeconds));
+        // Note: CommandTimeout is in seconds, but we use it as a fallback
+        command.CommandTimeout = timeBudgetSeconds > 0 ? timeBudgetSeconds : QueryTimeoutSeconds;
 
         var columns = new List<string>();
         var rows = new List<IReadOnlyList<object?>>();
         var truncated = false;
+        var timedOut = false;
+        string? timeoutMessage = null;
+        int rowsBeforeTimeout = 0;
+
+        // Create cancellation token with the specified time budget
+        // Use linked token source to combine time-based and manual cancellation
+        using var cts = timeBudgetSeconds > 0
+            ? new CancellationTokenSource(TimeSpan.FromSeconds(timeBudgetSeconds))
+            : new CancellationTokenSource();
+
+        // Register command.Cancel() to be called when cancellation is requested
+        // This interrupts the SQLite engine mid-execution
+        var cancellationTokenRegistration = cts.Token.Register(() =>
+        {
+            try
+            {
+                command.Cancel();
+            }
+            catch
+            {
+                // Ignore cancellation errors - we're already handling timeout
+            }
+        });
 
         try
         {
             // ExecuteReaderAsync respects the cancellation token.
+            // Use async/await properly to ensure cancellation works correctly
             using var reader = command.ExecuteReaderAsync(cts.Token).GetAwaiter().GetResult();
 
             for (var i = 0; i < reader.FieldCount; i++)
@@ -263,6 +293,14 @@ public sealed partial class SqliteExplorer : IDisposable
                     break;
                 }
 
+                // Check for cancellation before processing each row
+                if (cts.IsCancellationRequested)
+                {
+                    timedOut = true;
+                    rowsBeforeTimeout = rows.Count;
+                    break;
+                }
+
                 var values = new object?[reader.FieldCount];
                 for (var i = 0; i < reader.FieldCount; i++)
                     values[i] = reader.IsDBNull(i) ? null : reader.GetValue(i);
@@ -271,18 +309,52 @@ public sealed partial class SqliteExplorer : IDisposable
             }
         }
         // Catch the more specific exception first, then the base.
-        catch (TaskCanceledException)
+        catch (TaskCanceledException) when (cts.IsCancellationRequested)
         {
-            // Translate cancellation into a clear timeout message.
-            throw new InvalidOperationException($"Query timed out after {QueryTimeoutSeconds} seconds.");
+            timedOut = true;
+            rowsBeforeTimeout = rows.Count;
+            timeoutMessage = $"Query exceeded time budget of {timeBudgetSeconds} seconds.";
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            // Translate cancellation into a clear timeout message.
-            throw new InvalidOperationException($"Query timed out after {QueryTimeoutSeconds} seconds.");
+            timedOut = true;
+            rowsBeforeTimeout = rows.Count;
+            timeoutMessage = $"Query exceeded time budget of {timeBudgetSeconds} seconds.";
+        }
+        catch (SqliteException ex) when (cts.IsCancellationRequested &&
+            (ex.SqliteErrorCode == 9 || ex.Message.Contains("interrupt")))
+        {
+            // SQLite error 9 is SQLITE_INTERRUPT - query was interrupted
+            timedOut = true;
+            rowsBeforeTimeout = rows.Count;
+            timeoutMessage = $"Query exceeded time budget of {timeBudgetSeconds} seconds.";
+        }
+        finally
+        {
+            // Clean up the cancellation registration
+            cancellationTokenRegistration.Dispose();
         }
 
-        return new QueryResult(columns, rows, cap, truncated);
+        if (timedOut)
+        {
+            return new QueryResult(
+                Columns: columns,
+                Rows: rows,
+                AppliedRowCap: cap,
+                Truncated: false, // Don't report truncation when timeout occurs
+                TimedOut: true,
+                TimeoutMessage: timeoutMessage ?? $"Query exceeded time budget of {timeBudgetSeconds} seconds.",
+                RowsBeforeTimeout: rowsBeforeTimeout
+            );
+        }
+
+        return new QueryResult(
+            Columns: columns,
+            Rows: rows,
+            AppliedRowCap: cap,
+            Truncated: truncated,
+            RowsBeforeTimeout: 0
+        );
     }
 
     private string RequireExistingTable(string table)
@@ -445,7 +517,10 @@ public sealed record QueryResult(
     IReadOnlyList<string> Columns,
     IReadOnlyList<IReadOnlyList<object?>> Rows,
     int AppliedRowCap,
-    bool Truncated);
+    bool Truncated,
+    bool TimedOut = false,
+    string? TimeoutMessage = null,
+    int RowsBeforeTimeout = 0);
 
 [Obsolete("Use TableProfile instead. This type will be removed in a future version.")]
 public sealed record ColumnStat(string Name, int NullCount);

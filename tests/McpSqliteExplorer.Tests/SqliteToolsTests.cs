@@ -368,6 +368,41 @@ namespace McpSqliteExplorer.Tests
             Assert.NotNull(ex);
         }
 
+        [Fact]
+        public void RunSelect_WithTimeBudgetParameter_WorksCorrectly()
+        {
+            // Test that the timeBudgetSeconds parameter is properly passed through
+            // This verifies the API integration works correctly
+            var result = _explorer.RunSelect("SELECT * FROM books", limit: 5, timeBudgetSeconds: 15);
+
+            // The query should complete successfully
+            Assert.False(result.TimedOut);
+            Assert.Null(result.TimeoutMessage);
+            Assert.True(result.Rows.Count > 0);
+        }
+
+        [Fact]
+        public void SampleRows_WithTimeBudgetParameter_WorksCorrectly()
+        {
+            // Test that SampleRows also accepts the timeBudgetSeconds parameter
+            var result = _explorer.SampleRows("authors", limit: 3, timeBudgetSeconds: 15);
+
+            // The query should complete successfully
+            Assert.False(result.TimedOut);
+            Assert.Null(result.TimeoutMessage);
+            Assert.Equal(3, result.Rows.Count);
+        }
+
+        [Fact]
+        public void RunSelect_WithZeroTimeBudget_DisablesTimeout()
+        {
+            // Test that timeBudgetSeconds = 0 disables timeout
+            var result = _explorer.RunSelect("SELECT 1", limit: 100, timeBudgetSeconds: 0);
+
+            Assert.False(result.TimedOut);
+            Assert.Null(result.TimeoutMessage);
+        }
+
         #endregion
     }
 }

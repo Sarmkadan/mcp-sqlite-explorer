@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text.Json;
 using ModelContextProtocol.Server;
@@ -53,16 +54,18 @@ public sealed class SqliteTools
     public static string SampleRows(
         SqliteExplorer explorer,
         [Description("Name of the table or view to sample.")] string table,
-        [Description("Maximum number of rows to return (1-1000, default 100).")] int limit = SqliteExplorer.DefaultRowCap) =>
-        Guarded(() => ToPayload(explorer.SampleRows(table, limit)));
+        [Description("Maximum number of rows to return (1-1000, default 100).")] int limit = SqliteExplorer.DefaultRowCap,
+        [Description("Maximum execution time in seconds (default 15). Set to 0 to disable timeout.")] int timeBudgetSeconds = 15) =>
+        Guarded(() => ToPayload(explorer.SampleRows(table, limit, timeBudgetSeconds)));
 
     [McpServerTool(Name = "run_select")]
     [Description("Run a single read-only SELECT (or WITH ... SELECT) query and return the rows, capped for safety. Write statements are rejected.")]
     public static string RunSelect(
         SqliteExplorer explorer,
         [Description("A single SELECT or WITH ... SELECT statement. No INSERT/UPDATE/DELETE/DDL and no multiple statements.")] string sql,
-        [Description("Maximum number of rows to return (1-1000, default 100).")] int limit = SqliteExplorer.DefaultRowCap) =>
-        Guarded(() => ToPayload(explorer.RunSelect(sql, limit)));
+        [Description("Maximum number of rows to return (1-1000, default 100).")] int limit = SqliteExplorer.DefaultRowCap,
+        [Description("Maximum execution time in seconds (default 15). Set to 0 to disable timeout.")] int timeBudgetSeconds = 15) =>
+        Guarded(() => ToPayload(explorer.RunSelect(sql, limit, timeBudgetSeconds)));
 
     [McpServerTool(Name = "explain_query")]
     [Description("Run EXPLAIN QUERY PLAN for a SELECT statement and return the execution plan.")]
@@ -134,6 +137,9 @@ public sealed class SqliteTools
             rowCount = rows.Count,
             appliedRowCap = result.AppliedRowCap,
             truncated = result.Truncated,
+            timedOut = result.TimedOut,
+            timeoutMessage = result.TimeoutMessage,
+            rowsBeforeTimeout = result.RowsBeforeTimeout,
             rows,
         };
     }
