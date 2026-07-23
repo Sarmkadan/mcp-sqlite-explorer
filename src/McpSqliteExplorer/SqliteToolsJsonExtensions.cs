@@ -7,11 +7,18 @@ namespace McpSqliteExplorer;
 /// </summary>
 public static class SqliteToolsJsonExtensions
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerOptions.Default)
+    private static readonly JsonSerializerOptions JsonOptions = SqliteValueConverter.CreateJsonOptions(
+        camelCaseProperties: true,
+        writeIndented: false,
+        includeObjectConverter: true
+    );
+
+    static SqliteToolsJsonExtensions()
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
+        // Add the record converters after creating the base options
+        JsonOptions.Converters.Add(new SqliteValueConverter.ValueFrequencyConverter());
+        JsonOptions.Converters.Add(new SqliteValueConverter.QueryResultConverter());
+    }
 
     /// <summary>
     /// Serializes the <see cref="SqliteTools"/> instance to a JSON string.
@@ -25,7 +32,11 @@ public static class SqliteToolsJsonExtensions
         ArgumentNullException.ThrowIfNull(value);
 
         var options = indented
-            ? new JsonSerializerOptions(JsonOptions) { WriteIndented = true }
+            ? SqliteValueConverter.CreateJsonOptions(
+                camelCaseProperties: true,
+                writeIndented: true,
+                includeObjectConverter: true
+            )
             : JsonOptions;
 
         return JsonSerializer.Serialize(value, options);

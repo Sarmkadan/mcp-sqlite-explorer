@@ -12,11 +12,11 @@ public static class SqliteExplorerJsonExtensions
 	/// <summary>
 	/// Gets the JSON serialization options used by this class.
 	/// </summary>
-	private static JsonSerializerOptions JsonOptions { get; } = new JsonSerializerOptions
-	{
-		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-		WriteIndented = true,
-	};
+	private static JsonSerializerOptions JsonOptions { get; } = SqliteValueConverter.CreateJsonOptions(
+	    camelCaseProperties: true,
+	    writeIndented: true,
+	    includeObjectConverter: true
+	);
 
 	/// <summary>
 	/// Serializes the specified <see cref="SqliteExplorer"/> instance to a JSON string.
