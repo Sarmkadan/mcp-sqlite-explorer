@@ -294,4 +294,7 @@ public sealed record IndexSuggestion(
     string Table,
     IReadOnlyList<string> Columns,
     string ProposedSql,
-    string Rationale);
+    string Rationale,
+IReadOnlyList<QueryPlanNode>? BeforePlan = null,
+IReadOnlyList<QueryPlanNode>? AfterPlan = null,
+bool PlanUsesIndex = false);

@@ -94,7 +94,7 @@ public sealed class SqliteAnalysisTools
         });
 
     [McpServerTool(Name = "suggest_indexes")]
-    [Description("Analyse a SELECT's query plan for full table scans and suggest candidate CREATE INDEX statements for the un-indexed columns the query touches. Suggestions are heuristic - review them before applying; this server can never create the index itself.")]
+    [Description("Analyse a SELECT's query plan for full table scans and suggest candidate CREATE INDEX statements for the un-indexed columns the query touches. Suggestions are verified by running EXPLAIN QUERY PLAN on a scratch copy of the schema with the proposed index applied.")]
     public static string SuggestIndexes(
         SqliteExplorer explorer,
         [Description("A single SELECT or WITH ... SELECT statement to analyse.")] string sql) =>
