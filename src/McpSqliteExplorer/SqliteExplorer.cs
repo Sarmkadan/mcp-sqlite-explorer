@@ -15,9 +15,10 @@ namespace McpSqliteExplorer;
 /// database, and non-SELECT statements are rejected before they ever reach the
 /// engine.
 /// </summary>
-public sealed partial class SqliteExplorer : IDisposable
+public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
 {
     private readonly string _connectionString;
+    private readonly ISqliteCatalog _catalog;
     private bool _disposed;
 
     /// <summary>
@@ -55,6 +56,10 @@ public sealed partial class SqliteExplorer : IDisposable
             // way of any process actively writing to the file.
             Cache = SqliteCacheMode.Shared,
         }.ToString();
+
+        // Create the catalog that centralizes all schema access
+        var baseCatalog = new SqliteCatalog(databasePath);
+        _catalog = new MemoizingSqliteCatalog(baseCatalog);
     }
 
     /// <summary>
@@ -78,9 +83,9 @@ public sealed partial class SqliteExplorer : IDisposable
         if (disposing)
         {
             // Dispose managed resources
+            _catalog?.Dispose();
         }
 
-        // No unmanaged resources to dispose in this class
         _disposed = true;
     }
 
@@ -502,6 +507,24 @@ public sealed partial class SqliteExplorer : IDisposable
 
     private static string QuoteIdentifier(string identifier) =>
         '"' + identifier.Replace("\"", "\"\"") + '"';
+
+    /// <inheritdoc />
+    public IReadOnlyList<TableInfo> GetTables() => _catalog.GetTables();
+
+    /// <inheritdoc />
+    public IReadOnlyList<ColumnInfo> GetColumns(string table) => _catalog.GetColumns(table);
+
+    /// <inheritdoc />
+    public IReadOnlyList<ForeignKeyInfo> GetForeignKeys(string table) => _catalog.GetForeignKeys(table);
+
+    /// <inheritdoc />
+    public IReadOnlyList<IndexInfo> GetIndexes(string table) => _catalog.GetIndexes(table);
+
+    /// <inheritdoc />
+    public IReadOnlyList<ForeignKeyInfo> GetForeignKeyGraph() => _catalog.GetForeignKeyGraph();
+
+    /// <inheritdoc />
+    public string GetSchemaVersion() => _catalog.GetSchemaVersion();
 }
 
 public sealed record TableInfo(string Name, string Type);

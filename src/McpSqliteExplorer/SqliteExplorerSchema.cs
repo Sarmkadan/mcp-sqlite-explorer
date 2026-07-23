@@ -16,99 +16,13 @@ public sealed partial class SqliteExplorer
     /// <c>PRAGMA index_info</c>, including implicit indexes SQLite creates for
     /// UNIQUE constraints and primary keys.
     /// </summary>
-    public IReadOnlyList<IndexInfo> ListIndexes(string table)
-    {
-        var safeName = RequireExistingTable(table);
-
-        using var connection = OpenConnection();
-        var indexes = new List<IndexInfo>();
-
-        using (var listCommand = connection.CreateCommand())
-        {
-            listCommand.CommandText = $"PRAGMA index_list({QuoteIdentifier(safeName)});";
-            using var reader = listCommand.ExecuteReader();
-            while (reader.Read())
-            {
-                indexes.Add(new IndexInfo(
-                    Name: reader.GetString(reader.GetOrdinal("name")),
-                    Table: safeName,
-                    Unique: reader.GetInt64(reader.GetOrdinal("unique")) != 0,
-                    // 'c' = CREATE INDEX, 'u' = UNIQUE constraint, 'pk' = primary key
-                    Origin: reader.GetString(reader.GetOrdinal("origin")) switch
-                    {
-                        "c" => "create-index",
-                        "u" => "unique-constraint",
-                        "pk" => "primary-key",
-                        var other => other,
-                    },
-                    Partial: reader.GetInt64(reader.GetOrdinal("partial")) != 0,
-                    Columns: []));
-            }
-        }
-
-        for (var i = 0; i < indexes.Count; i++)
-        {
-            using var infoCommand = connection.CreateCommand();
-            infoCommand.CommandText = $"PRAGMA index_info({QuoteIdentifier(indexes[i].Name)});";
-
-            var columns = new List<string>();
-            using var reader = infoCommand.ExecuteReader();
-            while (reader.Read())
-            {
-                var nameOrdinal = reader.GetOrdinal("name");
-                // Expression indexes report NULL for the column name.
-                columns.Add(reader.IsDBNull(nameOrdinal) ? "<expression>" : reader.GetString(nameOrdinal));
-            }
-
-            indexes[i] = indexes[i] with { Columns = columns };
-        }
-
-        return indexes;
-    }
+    public IReadOnlyList<IndexInfo> ListIndexes(string table) => GetIndexes(table);
 
     /// <summary>
     /// Lists the foreign keys declared on a table using <c>PRAGMA foreign_key_list</c>.
     /// One entry per referencing column (composite keys produce one entry per column pair).
     /// </summary>
-    public IReadOnlyList<ForeignKeyInfo> ListForeignKeys(string table)
-    {
-        var safeName = RequireExistingTable(table);
-
-        using var connection = OpenConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText = $"PRAGMA foreign_key_list({QuoteIdentifier(safeName)});";
-
-        var foreignKeys = new List<ForeignKeyInfo>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            var toOrdinal = reader.GetOrdinal("to");
-            foreignKeys.Add(new ForeignKeyInfo(
-                Table: safeName,
-                Column: reader.GetString(reader.GetOrdinal("from")),
-                ReferencesTable: reader.GetString(reader.GetOrdinal("table")),
-                // NULL means "the referenced table's primary key".
-                ReferencesColumn: reader.IsDBNull(toOrdinal) ? null : reader.GetString(toOrdinal),
-                OnUpdate: reader.GetString(reader.GetOrdinal("on_update")),
-                OnDelete: reader.GetString(reader.GetOrdinal("on_delete"))));
-        }
-
-        return foreignKeys;
-    }
-
-    /// <summary>Collects every foreign key in the database, table by table.</summary>
-    public IReadOnlyList<ForeignKeyInfo> GetForeignKeyGraph()
-    {
-        var edges = new List<ForeignKeyInfo>();
-        foreach (var table in ListTables())
-        {
-            if (table.Type != "table")
-                continue;
-            edges.AddRange(ListForeignKeys(table.Name));
-        }
-
-        return edges;
-    }
+    public IReadOnlyList<ForeignKeyInfo> ListForeignKeys(string table) => GetForeignKeys(table);
 
     /// <summary>
     /// Walks the foreign-key graph outward from a starting table, in both directions
@@ -122,7 +36,7 @@ public sealed partial class SqliteExplorer
         if (maxDepth < 1)
             maxDepth = 1;
 
-        var edges = GetForeignKeyGraph();
+        var edges = _catalog.GetForeignKeyGraph();
         var hops = new List<ForeignKeyHop>();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { safeName };
         var frontier = new List<string> { safeName };
@@ -181,7 +95,7 @@ public sealed partial class SqliteExplorer
                 .Select(fk => fk.Column)
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            builder.AppendLine($"    {MermaidName(table.Name)} {{");
+            builder.AppendLine($" {MermaidName(table.Name)} {{");
             foreach (var column in columns)
             {
                 var type = string.IsNullOrWhiteSpace(column.Type)
@@ -193,20 +107,19 @@ public sealed partial class SqliteExplorer
                 if (fkColumns.Contains(column.Name))
                     markers.Add("FK");
 
-                builder.Append($"        {type} {MermaidName(column.Name)}");
+                builder.Append($" {type} {MermaidName(column.Name)}");
                 if (markers.Count > 0)
                     builder.Append(' ').Append(string.Join(",", markers));
                 builder.AppendLine();
             }
 
-            builder.AppendLine("    }");
+            builder.AppendLine(" }");
         }
 
         foreach (var fk in allForeignKeys)
         {
             var target = fk.ReferencesColumn ?? "PK";
-            builder.AppendLine(
-                $"    {MermaidName(fk.Table)} }}o--|| {MermaidName(fk.ReferencesTable)} : \"{fk.Column} -> {target}\"");
+            builder.AppendLine($" {MermaidName(fk.Table)} }}o--|| {MermaidName(fk.ReferencesTable)} : \"{fk.Column} -> {target}\"");
         }
 
         return builder.ToString();
@@ -223,22 +136,18 @@ public sealed partial class SqliteExplorer
         using (var probe = connection.CreateCommand())
         {
             probe.CommandText =
-                """
-                SELECT name FROM sqlite_master
-                WHERE type = 'table' AND name = '__EFMigrationsHistory'
-                LIMIT 1;
-                """;
+                "SELECT name FROM sqlite_master\n" +
+                " WHERE type = 'table' AND name = '__EFMigrationsHistory'\n" +
+                " LIMIT 1;";
             if (probe.ExecuteScalar() is null)
                 return new EfMigrationInfo(HasHistoryTable: false, Migrations: []);
         }
 
         using var command = connection.CreateCommand();
         command.CommandText =
-            """
-            SELECT MigrationId, ProductVersion
-            FROM __EFMigrationsHistory
-            ORDER BY MigrationId;
-            """;
+            "SELECT MigrationId, ProductVersion\n" +
+            " FROM __EFMigrationsHistory\n" +
+            " ORDER BY MigrationId;";
 
         var migrations = new List<MigrationEntry>();
         using var reader = command.ExecuteReader();
