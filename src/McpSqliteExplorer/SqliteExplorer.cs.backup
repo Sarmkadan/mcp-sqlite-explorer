@@ -57,32 +57,32 @@ public sealed partial class SqliteExplorer : IDisposable
         }.ToString();
     }
 
-    /// <summary>
-    /// Disposes the SqliteExplorer and cleans up any resources.
-    /// </summary>
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    /// <summary>
-    /// Disposes resources.
-    /// </summary>
-    /// <param name="disposing">True if called from Dispose, false if called from finalizer.</param>
-    private void Dispose(bool disposing)
-    {
-        if (_disposed)
-            return;
-
-        if (disposing)
+        /// <summary>
+        /// Disposes the SqliteExplorer and cleans up any resources.
+        /// </summary>
+        public void Dispose()
         {
-            // Dispose managed resources
+            Dispose(true);
+            GC.SuppressFinalize(this);
         }
 
-        // No unmanaged resources to dispose in this class
-        _disposed = true;
-    }
+        /// <summary>
+        /// Disposes resources.
+        /// </summary>
+        /// <param name="disposing">True if called from Dispose, false if called from finalizer.</param>
+        private void Dispose(bool disposing)
+        {
+            if (_disposed)
+                return;
+
+            if (disposing)
+            {
+                // Dispose managed resources
+            }
+
+            // No unmanaged resources to dispose in this class
+            _disposed = true;
+        }
 
     private SqliteConnection OpenConnection()
     {
@@ -97,13 +97,13 @@ public sealed partial class SqliteExplorer : IDisposable
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText =
-        """
-        SELECT name, type
-        FROM sqlite_master
-        WHERE type IN ('table', 'view')
-        AND name NOT LIKE 'sqlite_%'
-        ORDER BY type, name;
-        """;
+            """
+            SELECT name, type
+            FROM sqlite_master
+            WHERE type IN ('table', 'view')
+              AND name NOT LIKE 'sqlite_%'
+            ORDER BY type, name;
+            """;
 
         var tables = new List<TableInfo>();
         using var reader = command.ExecuteReader();
@@ -165,14 +165,8 @@ public sealed partial class SqliteExplorer : IDisposable
     /// Returns basic statistics for a table: total row count and, for the first
     /// up‑to‑20 columns, the number of rows where that column is NULL.
     /// </summary>
-    /// <param name="table">Name of the table or view to analyse.</param>
-    /// <returns>A <see cref="TableProfile"/> containing row count, column profiles for the first 20 columns,
-    /// and basic statistics including null counts and rates.</returns>
-    /// <exception cref="ArgumentException">Thrown when the table does not exist.</exception>
-    public TableProfile TableStats(string table)
+    public TableStatsResult TableStats(string table)
     {
-        ArgumentException.ThrowIfNullOrEmpty(table);
-
         var safeName = RequireExistingTable(table);
 
         // Get column information and limit to the first 20 columns.
@@ -197,26 +191,16 @@ public sealed partial class SqliteExplorer : IDisposable
 
         // The result will contain exactly one row.
         var row = result.Rows[0];
-        var rowCount = Convert.ToInt64(Convert.ToInt32(row[0]));
+        var rowCount = Convert.ToInt32(row[0]);
 
-        var profiles = new List<ColumnProfile>();
+        var columnStats = new List<ColumnStat>();
         for (int i = 0; i < columns.Count; i++)
         {
-            var nullCount = Convert.ToInt64(Convert.ToInt32(row[i + 1]));
-            var nullRate = rowCount == 0 ? 0.0 : Math.Round((double)nullCount / rowCount, 4);
-            profiles.Add(new ColumnProfile(
-                Name: columns[i].Name,
-                Type: columns[i].Type,
-                NullCount: nullCount,
-                NullRate: nullRate,
-                DistinctCount: 0, // Not computed for basic stats to keep it fast
-                Min: null,
-                Max: null,
-                TopValues: Array.Empty<ValueFrequency>()
-            ));
+            var nullCount = Convert.ToInt32(row[i + 1]);
+            columnStats.Add(new ColumnStat(columns[i].Name, nullCount));
         }
 
-        return new TableProfile(safeName, rowCount, profiles);
+        return new TableStatsResult(rowCount, columnStats);
     }
 
     private QueryResult ExecuteReadOnly(string sql, int cap)
@@ -293,11 +277,11 @@ public sealed partial class SqliteExplorer : IDisposable
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText =
-        """
-        SELECT name FROM sqlite_master
-        WHERE type IN ('table', 'view') AND name = $name
-        LIMIT 1;
-        """;
+            """
+            SELECT name FROM sqlite_master
+            WHERE type IN ('table', 'view') AND name = $name
+            LIMIT 1;
+            """;
         command.Parameters.AddWithValue("$name", table);
 
         var resolved = command.ExecuteScalar() as string;
@@ -429,7 +413,7 @@ public sealed partial class SqliteExplorer : IDisposable
     }
 
     private static string QuoteIdentifier(string identifier) =>
-        '"' + identifier.Replace("\"", "\"\"") + '"';
+        "\"" + identifier.Replace("\"", "\"\"") + "\"";
 }
 
 public sealed record TableInfo(string Name, string Type);

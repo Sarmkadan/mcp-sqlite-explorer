@@ -69,11 +69,11 @@ public sealed class SqliteTools
     public static string ExplainQuery(
         SqliteExplorer explorer,
         [Description("A single SELECT statement to analyze. Only SELECT statements are permitted.")] string sql) =>
-        Guarded(() =>
-        {
-            var plan = explorer.ExplainQueryPlan(sql);
-            return new { planCount = plan.Count, plan };
-        });
+    Guarded(() =>
+    {
+        var plan = explorer.ExplainQueryPlan(sql);
+        return new { planCount = plan.Count, plan };
+    });
 
     [McpServerTool(Name = "table_stats")]
     [Description("Return basic statistics for a table: total row count and, for the first up‑to‑20 columns, the number of NULL values per column.")]
@@ -82,19 +82,12 @@ public sealed class SqliteTools
         [Description("Name of the table or view to analyse.")] string table) =>
         Guarded(() =>
         {
-            ArgumentNullException.ThrowIfNull(explorer);
-            ArgumentException.ThrowIfNullOrEmpty(table);
-
-            var profile = explorer.TableStats(table);
+            var stats = explorer.TableStats(table);
             return new
             {
-                table = profile.Table,
-                rowCount = profile.RowCount,
-                columnStats = profile.Columns.Select(c => new
-                {
-                    c.Name,
-                    nullCount = c.NullCount
-                }).ToList()
+                table,
+                rowCount = stats.RowCount,
+                columnStats = stats.ColumnStats
             };
         });
 
