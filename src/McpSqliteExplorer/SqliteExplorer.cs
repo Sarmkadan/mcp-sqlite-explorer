@@ -103,8 +103,23 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
         // busy_timeout makes SQLite itself wait (and retry internally) before
         // surfacing SQLITE_BUSY; ExecuteWithRetryAsync then covers the case where
         // even that wait is not enough because a writer is holding the lock longer.
+        //
+        // Mode=ReadOnly on the connection string keeps SQLite from ever obtaining a
+        // write lock on the file, but it does not by itself stop statements that try
+        // to write - those simply fail once they hit the file. query_only=ON makes
+        // the engine reject any writing statement (INSERT/UPDATE/DELETE/DDL, and
+        // writes performed by an ATTACHed database) up front, and trusted_schema=OFF
+        // disables the trusted-schema fast path so schema-embedded expressions
+        // cannot invoke unsafe functions. Together these make the "nothing can
+        // modify the database" guarantee an engine-level property, not something
+        // that depends on GuardSelectOnly correctly parsing every possible payload.
         using var pragma = connection.CreateCommand();
-        pragma.CommandText = $"PRAGMA busy_timeout = {BusyTimeoutMilliseconds};";
+        pragma.CommandText =
+        $"""
+        PRAGMA busy_timeout = {BusyTimeoutMilliseconds};
+        PRAGMA query_only = ON;
+        PRAGMA trusted_schema = OFF;
+        """;
         pragma.ExecuteNonQuery();
 
         return connection;

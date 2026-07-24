@@ -215,8 +215,17 @@ internal sealed class SqliteCatalog : ISqliteCatalog
         var connection = new SqliteConnection(_connectionString);
         connection.Open();
 
+        // See SqliteExplorer.OpenConnection for why query_only and trusted_schema
+        // are enforced here in addition to Mode=ReadOnly on the connection string:
+        // the read-only guarantee must hold at the engine level, not just because
+        // this class only ever issues SELECT/PRAGMA statements.
         using var pragma = connection.CreateCommand();
-        pragma.CommandText = $"PRAGMA busy_timeout = {BusyTimeoutMilliseconds};";
+        pragma.CommandText =
+        $"""
+        PRAGMA busy_timeout = {BusyTimeoutMilliseconds};
+        PRAGMA query_only = ON;
+        PRAGMA trusted_schema = OFF;
+        """;
         pragma.ExecuteNonQuery();
 
         return connection;
