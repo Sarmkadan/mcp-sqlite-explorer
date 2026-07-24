@@ -350,23 +350,26 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
     /// <summary>Lists user tables and views, skipping SQLite's internal bookkeeping tables.</summary>
     public IReadOnlyList<TableInfo> ListTables()
     {
-        using var connection = OpenConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText =
-        """
-        SELECT name, type
-        FROM sqlite_master
-        WHERE type IN ('table', 'view')
-        AND name NOT LIKE 'sqlite_%'
-        ORDER BY type, name;
-        """;
+        return ExecuteWithRetryAsync(() =>
+        {
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+            """
+            SELECT name, type
+            FROM sqlite_master
+            WHERE type IN ('table', 'view')
+            AND name NOT LIKE 'sqlite_%'
+            ORDER BY type, name;
+            """;
 
-        var tables = new List<TableInfo>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-            tables.Add(new TableInfo(reader.GetString(0), reader.GetString(1)));
+            var tables = new List<TableInfo>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+                tables.Add(new TableInfo(reader.GetString(0), reader.GetString(1)));
 
-        return tables;
+            return tables;
+        }).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -374,27 +377,30 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
     /// </summary>
     public IReadOnlyList<ColumnInfo> DescribeTable(string table)
     {
-        var safeName = RequireExistingTable(table);
-
-        using var connection = OpenConnection();
-        using var command = connection.CreateCommand();
-        // PRAGMA does not accept bound parameters for the identifier, so the name
-        // is validated against sqlite_master first and quoted here.
-        command.CommandText = $"PRAGMA table_info({QuoteIdentifier(safeName)});";
-
-        var columns = new List<ColumnInfo>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        return ExecuteWithRetryAsync(() =>
         {
-            columns.Add(new ColumnInfo(
-                Name: reader.GetString(reader.GetOrdinal("name")),
-                Type: reader.IsDBNull(reader.GetOrdinal("type")) ? "" : reader.GetString(reader.GetOrdinal("type")),
-                NotNull: reader.GetInt64(reader.GetOrdinal("notnull")) != 0,
-                DefaultValue: reader.IsDBNull(reader.GetOrdinal("dflt_value")) ? null : reader.GetString(reader.GetOrdinal("dflt_value")),
-                PrimaryKey: reader.GetInt64(reader.GetOrdinal("pk")) != 0));
-        }
+            var safeName = RequireExistingTable(table);
 
-        return columns;
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            // PRAGMA does not accept bound parameters for the identifier, so the name
+            // is validated against sqlite_master first and quoted here.
+            command.CommandText = $"PRAGMA table_info({QuoteIdentifier(safeName)});";
+
+            var columns = new List<ColumnInfo>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                columns.Add(new ColumnInfo(
+                    Name: reader.GetString(reader.GetOrdinal("name")),
+                    Type: reader.IsDBNull(reader.GetOrdinal("type")) ? "" : reader.GetString(reader.GetOrdinal("type")),
+                    NotNull: reader.GetInt64(reader.GetOrdinal("notnull")) != 0,
+                    DefaultValue: reader.IsDBNull(reader.GetOrdinal("dflt_value")) ? null : reader.GetString(reader.GetOrdinal("dflt_value")),
+                    PrimaryKey: reader.GetInt64(reader.GetOrdinal("pk")) != 0));
+            }
+
+            return columns;
+        }).GetAwaiter().GetResult();
     }
 
     /// <summary>Returns up to <paramref name="limit"/> sample rows from a table.</summary>
@@ -618,21 +624,24 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
         if (string.IsNullOrWhiteSpace(table))
             throw new ArgumentException("Table name must not be empty.", nameof(table));
 
-        using var connection = OpenConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText =
-        """
-        SELECT name FROM sqlite_master
-        WHERE type IN ('table', 'view') AND name = $name
-        LIMIT 1;
-        """;
-        command.Parameters.AddWithValue("$name", table);
+        return ExecuteWithRetryAsync(() =>
+        {
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+            """
+            SELECT name FROM sqlite_master
+            WHERE type IN ('table', 'view') AND name = $name
+            LIMIT 1;
+            """;
+            command.Parameters.AddWithValue("$name", table);
 
-        var resolved = command.ExecuteScalar() as string;
-        if (resolved is null)
-            throw new ArgumentException($"No such table or view: '{table}'.", nameof(table));
+            var resolved = command.ExecuteScalar() as string;
+            if (resolved is null)
+                throw new ArgumentException($"No such table or view: '{table}'.", nameof(table));
 
-        return resolved;
+            return resolved;
+        }).GetAwaiter().GetResult();
     }
 
     internal static int ClampLimit(int limit)
@@ -795,4 +804,3 @@ public sealed record QueryResult(
     bool TimedOut = false,
     string? TimeoutMessage = null,
     int RowsBeforeTimeout = 0);
-

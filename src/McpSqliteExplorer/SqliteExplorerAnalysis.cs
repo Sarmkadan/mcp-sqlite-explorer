@@ -32,28 +32,31 @@ public sealed partial class SqliteExplorer
     {
         GuardSelectOnly(sql);
 
-        using var connection = OpenConnection();
-        using var command = connection.CreateCommand();
-        command.CommandText = "EXPLAIN QUERY PLAN " + sql.Trim().TrimEnd(';');
-
-        var nodes = new List<QueryPlanNode>();
-        try
+        return ExecuteWithRetryAsync(() =>
         {
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = "EXPLAIN QUERY PLAN " + sql.Trim().TrimEnd(';');
+
+            var nodes = new List<QueryPlanNode>();
+            try
             {
-                nodes.Add(new QueryPlanNode(
-                    Id: reader.GetInt64(reader.GetOrdinal("id")),
-                    Parent: reader.GetInt64(reader.GetOrdinal("parent")),
-                    Detail: reader.GetString(reader.GetOrdinal("detail"))));
+                using var reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    nodes.Add(new QueryPlanNode(
+                        Id: reader.GetInt64(reader.GetOrdinal("id")),
+                        Parent: reader.GetInt64(reader.GetOrdinal("parent")),
+                        Detail: reader.GetString(reader.GetOrdinal("detail"))));
+                }
             }
-        }
-        catch (SqliteException ex)
-        {
-            throw new InvalidOperationException(DescribeSqliteError(ex), ex);
-        }
+            catch (SqliteException ex)
+            {
+                throw new InvalidOperationException(DescribeSqliteError(ex), ex);
+            }
 
-        return nodes;
+            return nodes;
+        }).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -80,66 +83,69 @@ public sealed partial class SqliteExplorer
         if (sampleRows <= 0)
             throw new ArgumentException("Sample row budget must be positive.", nameof(sampleRows));
 
-        var safeName = RequireExistingTable(table);
-        var columns = DescribeTable(safeName);
-        var quotedTable = QuoteIdentifier(safeName);
-
-        using var connection = OpenConnection();
-
-        long totalRowCount;
-        using (var countCommand = connection.CreateCommand())
+        return ExecuteWithRetryAsync(() =>
         {
-            countCommand.CommandText = $"SELECT COUNT(*) FROM {quotedTable};";
-            totalRowCount = Convert.ToInt64(countCommand.ExecuteScalar());
-        }
+            var safeName = RequireExistingTable(table);
+            var columns = DescribeTable(safeName);
+            var quotedTable = QuoteIdentifier(safeName);
 
-        var isSampled = totalRowCount > sampleRows;
-        var quotedColumns = columns.Select(c => QuoteIdentifier(c.Name)).ToList();
-        var selectList = string.Join(", ", quotedColumns);
+            using var connection = OpenConnection();
 
-        using var scanCommand = connection.CreateCommand();
-        scanCommand.CommandText = isSampled
-            ? $"SELECT {selectList} FROM {quotedTable} LIMIT $limit;"
-            : $"SELECT {selectList} FROM {quotedTable};";
-        if (isSampled)
-            scanCommand.Parameters.AddWithValue("$limit", sampleRows);
-
-        var accumulators = columns.Select(c => new ColumnAccumulator()).ToList();
-        long rowsScanned = 0;
-
-        using (var reader = scanCommand.ExecuteReader())
-        {
-            while (reader.Read())
+            long totalRowCount;
+            using (var countCommand = connection.CreateCommand())
             {
-                rowsScanned++;
-                for (var i = 0; i < accumulators.Count; i++)
-                    accumulators[i].Observe(reader.IsDBNull(i) ? null : reader.GetValue(i));
+                countCommand.CommandText = $"SELECT COUNT(*) FROM {quotedTable};";
+                totalRowCount = Convert.ToInt64(countCommand.ExecuteScalar());
             }
-        }
 
-        var profiles = new List<ColumnProfile>(columns.Count);
-        for (var i = 0; i < columns.Count; i++)
-        {
-            var column = columns[i];
-            var accumulator = accumulators[i];
-            var nullCount = rowsScanned - accumulator.NonNullCount;
+            var isSampled = totalRowCount > sampleRows;
+            var quotedColumns = columns.Select(c => QuoteIdentifier(c.Name)).ToList();
+            var selectList = string.Join(", ", quotedColumns);
 
-            var topValues = accumulator.IsLowCardinality
-                ? accumulator.TopValues(TopValueCount)
-                : QueryExactTopValues(connection, quotedTable, quotedColumns[i], isSampled, sampleRows);
+            using var scanCommand = connection.CreateCommand();
+            scanCommand.CommandText = isSampled
+                ? $"SELECT {selectList} FROM {quotedTable} LIMIT $limit;"
+                : $"SELECT {selectList} FROM {quotedTable};";
+            if (isSampled)
+                scanCommand.Parameters.AddWithValue("$limit", sampleRows);
 
-            profiles.Add(new ColumnProfile(
-                Name: column.Name,
-                Type: column.Type,
-                NullCount: nullCount,
-                NullRate: rowsScanned == 0 ? 0 : Math.Round((double)nullCount / rowsScanned, 4),
-                DistinctCount: accumulator.DistinctCount,
-                Min: accumulator.Min,
-                Max: accumulator.Max,
-                TopValues: topValues));
-        }
+            var accumulators = columns.Select(c => new ColumnAccumulator()).ToList();
+            long rowsScanned = 0;
 
-        return new TableProfile(safeName, totalRowCount, profiles, isSampled, rowsScanned);
+            using (var reader = scanCommand.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    rowsScanned++;
+                    for (var i = 0; i < accumulators.Count; i++)
+                        accumulators[i].Observe(reader.IsDBNull(i) ? null : reader.GetValue(i));
+                }
+            }
+
+            var profiles = new List<ColumnProfile>(columns.Count);
+            for (var i = 0; i < columns.Count; i++)
+            {
+                var column = columns[i];
+                var accumulator = accumulators[i];
+                var nullCount = rowsScanned - accumulator.NonNullCount;
+
+                var topValues = accumulator.IsLowCardinality
+                    ? accumulator.TopValues(TopValueCount)
+                    : QueryExactTopValues(connection, quotedTable, quotedColumns[i], isSampled, sampleRows);
+
+                profiles.Add(new ColumnProfile(
+                    Name: column.Name,
+                    Type: column.Type,
+                    NullCount: nullCount,
+                    NullRate: rowsScanned == 0 ? 0.0 : Math.Round((double)nullCount / rowsScanned, 4),
+                    DistinctCount: accumulator.DistinctCount,
+                    Min: accumulator.Min,
+                    Max: accumulator.Max,
+                    TopValues: topValues));
+            }
+
+            return new TableProfile(safeName, totalRowCount, profiles, isSampled, rowsScanned);
+        }).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -156,14 +162,14 @@ public sealed partial class SqliteExplorer
             ? $"(SELECT {quotedColumn} FROM {quotedTable} LIMIT {sampleRows})"
             : quotedTable;
         topCommand.CommandText =
-            $"""
-            SELECT {quotedColumn} AS value, COUNT(*) AS occurrences
-            FROM {source}
-            WHERE {quotedColumn} IS NOT NULL
-            GROUP BY {quotedColumn}
-            ORDER BY occurrences DESC, value
-            LIMIT {TopValueCount};
-            """;
+        $"""
+        SELECT {quotedColumn} AS value, COUNT(*) AS occurrences
+        FROM {source}
+        WHERE {quotedColumn} IS NOT NULL
+        GROUP BY {quotedColumn}
+        ORDER BY occurrences DESC, value
+        LIMIT {TopValueCount};
+        """;
 
         var topValues = new List<ValueFrequency>();
         using var reader = topCommand.ExecuteReader();
@@ -446,6 +452,6 @@ public sealed record IndexSuggestion(
     IReadOnlyList<string> Columns,
     string ProposedSql,
     string Rationale,
-IReadOnlyList<QueryPlanNode>? BeforePlan = null,
-IReadOnlyList<QueryPlanNode>? AfterPlan = null,
-bool PlanUsesIndex = false);
+    IReadOnlyList<QueryPlanNode>? BeforePlan = null,
+    IReadOnlyList<QueryPlanNode>? AfterPlan = null,
+    bool PlanUsesIndex = false);
