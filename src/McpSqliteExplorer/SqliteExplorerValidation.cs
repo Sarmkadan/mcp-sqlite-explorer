@@ -6,6 +6,35 @@ using System.Text;
 namespace McpSqliteExplorer;
 
 /// <summary>
+/// Custom exception thrown when validation of SQLite identifiers (table names, column names, etc.) fails.
+/// This provides a consistent error type across SqliteTools, SqliteAnalysisTools, and SqliteExplorer.
+/// </summary>
+public sealed class SqliteExplorerValidationException : ArgumentException
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SqliteExplorerValidationException"/> class.
+    /// </summary>
+    /// <param name="message">The error message that explains the reason for the exception.</param>
+    public SqliteExplorerValidationException(string message) : base(message) { }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SqliteExplorerValidationException"/> class.
+    /// </summary>
+    /// <param name="message">The error message that explains the reason for the exception.</param>
+    /// <param name="paramName">The name of the parameter that caused the current exception.</param>
+    public SqliteExplorerValidationException(string message, string? paramName) : base(message, paramName) { }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SqliteExplorerValidationException"/> class with serialized data.
+    /// </summary>
+    /// <param name="info">The <see cref="System.Runtime.Serialization.SerializationInfo"/> that holds the serialized object data about the exception being thrown.</param>
+    /// <param name="context">The <see cref="System.Runtime.Serialization.StreamingContext"/> that contains contextual information about the source or destination.</param>
+    private SqliteExplorerValidationException(
+        System.Runtime.Serialization.SerializationInfo info,
+        System.Runtime.Serialization.StreamingContext context) : base(info, context) { }
+}
+
+/// <summary>
 /// Provides validation helpers for <see cref="SqliteExplorer"/> instances and its related record types.
 /// </summary>
 public static class SqliteExplorerValidation
