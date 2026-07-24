@@ -96,4 +96,15 @@ public sealed class SqliteExplorerEngineReadOnlyTests : IDisposable
         var ex = Assert.Throws<SqliteException>(() => write.ExecuteNonQuery());
         Assert.Equal(SQLitePCL.raw.SQLITE_READONLY, ex.SqliteErrorCode);
     }
+
+    [Fact]
+    public void RunSelect_PragmaJournalModeWal_ThrowsBeforeMutatingFile()
+    {
+        var bytesBefore = File.ReadAllBytes(_database.Path);
+        using var explorer = new SqliteExplorer(_database.Path);
+
+        Assert.ThrowsAny<Exception>(() => explorer.RunSelect("PRAGMA journal_mode=WAL"));
+
+        Assert.Equal(bytesBefore, File.ReadAllBytes(_database.Path));
+    }
 }
