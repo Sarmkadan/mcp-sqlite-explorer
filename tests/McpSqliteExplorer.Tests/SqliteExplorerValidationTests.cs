@@ -815,4 +815,588 @@ public class SqliteExplorerValidationTests
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() => queryResult!.EnsureValid());
     }
+
+    // ==================================================================================================
+    // Tests for identifier validation
+    // ==================================================================================================
+
+    [Fact]
+    public void ValidateIdentifier_WithValidSimpleIdentifier_ReturnsEmptyList()
+    {
+        // Arrange
+        var identifier = "users";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithValidIdentifierWithUnderscores_ReturnsEmptyList()
+    {
+        // Arrange
+        var identifier = "user_accounts";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithValidIdentifierWithNumbers_ReturnsEmptyList()
+    {
+        // Arrange
+        var identifier = "users2";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithNullIdentifier_ReturnsError()
+    {
+        // Arrange
+        string? identifier = null;
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier!);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier must not be empty or whitespace", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithEmptyIdentifier_ReturnsError()
+    {
+        // Arrange
+        var identifier = "";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier must not be empty or whitespace", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithWhitespaceIdentifier_ReturnsError()
+    {
+        // Arrange
+        var identifier = "   ";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier must not be empty or whitespace", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithIdentifierWithLeadingWhitespace_ReturnsError()
+    {
+        // Arrange
+        var identifier = " users";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier contains leading or trailing whitespace", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithIdentifierWithTrailingWhitespace_ReturnsError()
+    {
+        // Arrange
+        var identifier = "users ";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier contains leading or trailing whitespace", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithIdentifierWithSQLInjectionPayload_ReturnsError()
+    {
+        // Arrange
+        var identifier = "users; DROP TABLE users--";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier contains SQL injection attempt", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithIdentifierContainingSemicolon_ReturnsError()
+    {
+        // Arrange
+        var identifier = "users;";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier contains SQL injection attempt", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithIdentifierContainingDoubleQuote_ReturnsError()
+    {
+        // Arrange
+        var identifier = "users\"";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier contains invalid characters or improper escaping", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithIdentifierContainingSquareBrackets_ReturnsError()
+    {
+        // Arrange
+        var identifier = "[users]";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier contains invalid characters or improper escaping", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithIdentifierContainingBackticks_ReturnsError()
+    {
+        // Arrange
+        var identifier = "`users`";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier contains invalid characters or improper escaping", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithIdentifierExceedingMaxLength_ReturnsError()
+    {
+        // Arrange
+        var identifier = new string('a', 256); // 256 characters, exceeds 255 limit
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Contains("exceeds maximum length of 255", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithReservedKeyword_ReturnsError()
+    {
+        // Arrange
+        var identifier = "SELECT";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier is a SQLite reserved keyword (use quoted identifier if intentional)", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithReservedKeywordAllowed_ReturnsEmptyList()
+    {
+        // Arrange
+        var identifier = "SELECT";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier, allowReservedKeywords: true);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithNonAsciiCharacters_ReturnsError()
+    {
+        // Arrange
+        var identifier = "users_日本語";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier contains non-ASCII characters (may cause compatibility issues)", result[0]);
+    }
+
+    [Fact]
+    public void ValidateIdentifier_WithControlCharacters_ReturnsError()
+    {
+        // Arrange
+        var identifier = "users\x00test";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateIdentifier(identifier);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("Identifier contains invalid characters or improper escaping", result[0]);
+    }
+
+    [Fact]
+    public void IsValidIdentifier_WithValidIdentifier_ReturnsTrue()
+    {
+        // Arrange
+        var identifier = "users";
+
+        // Act
+        var result = SqliteExplorerValidation.IsValidIdentifier(identifier);
+
+        // Assert
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void IsValidIdentifier_WithInvalidIdentifier_ReturnsFalse()
+    {
+        // Arrange
+        var identifier = "users; DROP TABLE users";
+
+        // Act
+        var result = SqliteExplorerValidation.IsValidIdentifier(identifier);
+
+        // Assert
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void EnsureValidIdentifier_WithValidIdentifier_DoesNotThrow()
+    {
+        // Arrange
+        var identifier = "users";
+
+        // Act & Assert
+        var exception = Record.Exception(() => SqliteExplorerValidation.EnsureValidIdentifier(identifier));
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void EnsureValidIdentifier_WithInvalidIdentifier_ThrowsArgumentException()
+    {
+        // Arrange
+        var identifier = "users; DROP TABLE users";
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() => SqliteExplorerValidation.EnsureValidIdentifier(identifier));
+        Assert.Contains("Identifier is invalid", exception.Message);
+        Assert.Contains("SQL injection attempt", exception.Message);
+    }
+
+    // ==================================================================================================
+    // Tests for SQL validation
+    // ==================================================================================================
+
+    [Fact]
+    public void ValidateSql_WithValidSelectStatement_ReturnsEmptyList()
+    {
+        // Arrange
+        var sql = "SELECT * FROM users WHERE id = 1";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ValidateSql_WithValidSelectWithWhere_ReturnsEmptyList()
+    {
+        // Arrange
+        var sql = "SELECT name, email FROM users WHERE active = 1 ORDER BY name";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ValidateSql_WithNullSql_ReturnsError()
+    {
+        // Arrange
+        string? sql = null;
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql!);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement must not be empty or whitespace", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithEmptySql_ReturnsError()
+    {
+        // Arrange
+        var sql = "";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement must not be empty or whitespace", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithWhitespaceSql_ThrowsArgumentException()
+    {
+        // Arrange
+        var sql = "   ";
+
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() => SqliteExplorerValidation.ValidateSql(sql));
+    }
+
+    [Fact]
+    public void ValidateSql_WithSqlWithLeadingWhitespace_ReturnsError()
+    {
+        // Arrange
+        var sql = " SELECT * FROM users";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains leading or trailing whitespace", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithSqlWithTrailingWhitespace_ReturnsError()
+    {
+        // Arrange
+        var sql = "SELECT * FROM users ";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains leading or trailing whitespace", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithMultipleStatements_ReturnsError()
+    {
+        // Arrange
+        var sql = "SELECT * FROM users; DELETE FROM users";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains multiple statements separated by semicolon", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithInsertStatement_ReturnsError()
+    {
+        // Arrange
+        var sql = "INSERT INTO users (name) VALUES ('test')";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains write operations (INSERT, UPDATE, DELETE, etc.)", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithUpdateStatement_ReturnsError()
+    {
+        // Arrange
+        var sql = "UPDATE users SET name = 'test' WHERE id = 1";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains write operations (INSERT, UPDATE, DELETE, etc.)", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithDeleteStatement_ReturnsError()
+    {
+        // Arrange
+        var sql = "DELETE FROM users WHERE id = 1";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains write operations (INSERT, UPDATE, DELETE, etc.)", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithDropStatement_ReturnsError()
+    {
+        // Arrange
+        var sql = "DROP TABLE users";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains dangerous keywords (DROP, ALTER, etc.)", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithAlterStatement_ReturnsError()
+    {
+        // Arrange
+        var sql = "ALTER TABLE users ADD COLUMN new_column TEXT";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains dangerous keywords (DROP, ALTER, etc.)", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithCreateStatement_ReturnsError()
+    {
+        // Arrange
+        var sql = "CREATE TABLE new_table (id INTEGER)";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains dangerous keywords (DROP, ALTER, etc.)", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithUnionStatement_ReturnsError()
+    {
+        // Arrange
+        var sql = "SELECT * FROM users UNION SELECT * FROM admins";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement contains write operations (INSERT, UPDATE, DELETE, etc.)", result[0]);
+    }
+
+    [Fact]
+    public void ValidateSql_WithCommentContainingWriteKeyword_ReturnsEmptyList()
+    {
+        // Arrange
+        var sql = "SELECT * FROM users -- This is a comment with UPDATE in it";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void ValidateSql_WithBlockCommentContainingWriteKeyword_ReturnsEmptyList()
+    {
+        // Arrange
+        var sql = "SELECT * FROM users /* This is a comment with DELETE in it */ WHERE id = 1";
+
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void IsValidSql_WithValidSelectStatement_ReturnsTrue()
+    {
+        // Arrange
+        var sql = "SELECT * FROM users";
+
+        // Act
+        var result = SqliteExplorerValidation.IsValidSql(sql);
+
+        // Assert
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void IsValidSql_WithInvalidSql_ReturnsFalse()
+    {
+        // Arrange
+        var sql = "INSERT INTO users VALUES (1)";
+
+        // Act
+        var result = SqliteExplorerValidation.IsValidSql(sql);
+
+        // Assert
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void EnsureValidSql_WithValidSelectStatement_DoesNotThrow()
+    {
+        // Arrange
+        var sql = "SELECT * FROM users";
+
+        // Act & Assert
+        var exception = Record.Exception(() => SqliteExplorerValidation.EnsureValidSql(sql));
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void EnsureValidSql_WithInvalidSql_ThrowsArgumentException()
+    {
+        // Arrange
+        var sql = "INSERT INTO users VALUES (1)";
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() => SqliteExplorerValidation.EnsureValidSql(sql));
+        Assert.Contains("SQL statement is invalid", exception.Message);
+        Assert.Contains("write operations", exception.Message);
+    }
 }
