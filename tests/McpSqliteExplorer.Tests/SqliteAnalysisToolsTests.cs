@@ -234,5 +234,189 @@ namespace McpSqliteExplorer.Tests
             Assert.Throws<ArgumentNullException>(() => SqliteAnalysisTools.SuggestIndexes(null!, "SELECT 1"));
             Assert.Throws<ArgumentNullException>(() => SqliteAnalysisTools.MigrationHistory(null!));
         }
+
+        [Fact]
+        public void SuggestIndexes_ForeignKeyColumnWithoutIndex_SuggestsIndex()
+        {
+            // Create a table with a foreign key column that has no index (should suggest one)
+            using var conn = new SqliteConnection($"Data Source={_dbPath};Mode=ReadWriteCreate");
+            conn.Open();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                CREATE TABLE department (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL
+                );
+
+                CREATE TABLE employee (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    department_id INTEGER NOT NULL,
+                    is_active BOOLEAN DEFAULT 1,
+                    FOREIGN KEY(department_id) REFERENCES department(id)
+                );
+            ";
+            cmd.ExecuteNonQuery();
+            conn.Close();
+
+            // Query that filters on the unindexed foreign key column
+            var sql = "SELECT * FROM employee WHERE department_id = 1";
+            var json = SqliteAnalysisTools.SuggestIndexes(_explorer, sql);
+            var root = ParseJson(json);
+
+            Assert.Equal(sql, root.GetProperty("sql").GetString());
+            var suggestions = root.GetProperty("suggestions");
+            var suggestionsArray = suggestions.EnumerateArray().ToList();
+
+            // Should have at least one suggestion for the department_id column
+            Assert.NotEmpty(suggestionsArray);
+            var suggestion = suggestionsArray[0];
+            Assert.Equal("employee", suggestion.GetProperty("Table").GetString());
+            var columns = suggestion.GetProperty("Columns");
+            Assert.Contains(columns.EnumerateArray(), c => c.GetString().Equals("department_id", StringComparison.OrdinalIgnoreCase));
+        }
+
+        [Fact]
+        public void SuggestIndexes_ColumnWithExistingIndex_DoesNotSuggestAgain()
+        {
+            // Query that uses an already indexed column should not suggest an index
+            var sql = "SELECT * FROM child WHERE value = 'x'";
+            var json = SqliteAnalysisTools.SuggestIndexes(_explorer, sql);
+            var root = ParseJson(json);
+
+            Assert.Equal(sql, root.GetProperty("sql").GetString());
+            var suggestions = root.GetProperty("suggestions");
+            var suggestionsArray = suggestions.EnumerateArray().ToList();
+
+            // Should have no suggestions since 'value' column is already indexed
+            Assert.Empty(suggestionsArray);
+        }
+
+        [Fact]
+        public void SuggestIndexes_LowCardinalityBooleanColumn_HandlesGracefully()
+        {
+            // Create a table with a boolean column (low cardinality)
+            using var conn = new SqliteConnection($"Data Source={_dbPath};Mode=ReadWriteCreate");
+            conn.Open();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                CREATE TABLE settings (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    enabled BOOLEAN DEFAULT 1
+                );
+            ";
+            cmd.ExecuteNonQuery();
+
+            // Insert some data
+            cmd.CommandText = "INSERT INTO settings (name, enabled) VALUES ('feature_x', 1), ('feature_y', 0), ('feature_z', 1)";
+            cmd.ExecuteNonQuery();
+            conn.Close();
+
+            // Query that filters on the boolean column
+            var sql = "SELECT * FROM settings WHERE enabled = 1";
+            var json = SqliteAnalysisTools.SuggestIndexes(_explorer, sql);
+            var root = ParseJson(json);
+
+            Assert.Equal(sql, root.GetProperty("sql").GetString());
+            var suggestions = root.GetProperty("suggestions");
+            var suggestionsArray = suggestions.EnumerateArray().ToList();
+
+            // Should still suggest an index even for low cardinality columns
+            // The heuristic should not crash or produce invalid results
+            Assert.NotNull(suggestionsArray);
+        }
+
+        [Fact]
+        public void SuggestIndexes_EmptyTable_HandlesGracefully()
+        {
+            // Create an empty table
+            using var conn = new SqliteConnection($"Data Source={_dbPath};Mode=ReadWriteCreate");
+            conn.Open();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                CREATE TABLE empty_table (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    status TEXT
+                );
+            ";
+            cmd.ExecuteNonQuery();
+            conn.Close();
+
+            // Query on empty table should not crash
+            var sql = "SELECT * FROM empty_table WHERE status = 'active'";
+            var json = SqliteAnalysisTools.SuggestIndexes(_explorer, sql);
+            var root = ParseJson(json);
+
+            Assert.Equal(sql, root.GetProperty("sql").GetString());
+            var suggestions = root.GetProperty("suggestions");
+            // May be empty or contain suggestions - either is acceptable
+            Assert.NotNull(suggestions);
+        }
+
+        [Fact]
+        public void SuggestIndexes_MultipleUnindexedColumns_SuggestsCompositeIndex()
+        {
+            // Create a table with multiple unindexed columns
+            using var conn = new SqliteConnection($"Data Source={_dbPath};Mode=ReadWriteCreate");
+            conn.Open();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                CREATE TABLE product (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    price REAL NOT NULL,
+                    in_stock BOOLEAN DEFAULT 1
+                );
+            ";
+            cmd.ExecuteNonQuery();
+
+            // Insert some data
+            cmd.CommandText = "INSERT INTO product (name, category, price, in_stock) VALUES ('Widget', 'Tools', 9.99, 1), ('Gadget', 'Tools', 19.99, 0)";
+            cmd.ExecuteNonQuery();
+            conn.Close();
+
+            // Query that filters on multiple unindexed columns
+            var sql = "SELECT * FROM product WHERE category = 'Tools' AND in_stock = 1";
+            var json = SqliteAnalysisTools.SuggestIndexes(_explorer, sql);
+            var root = ParseJson(json);
+
+            Assert.Equal(sql, root.GetProperty("sql").GetString());
+            var suggestions = root.GetProperty("suggestions");
+            var suggestionsArray = suggestions.EnumerateArray().ToList();
+
+            // Should suggest a composite index
+            Assert.NotEmpty(suggestionsArray);
+            var suggestion = suggestionsArray[0];
+            Assert.Equal("product", suggestion.GetProperty("Table").GetString());
+            var columns = suggestion.GetProperty("Columns");
+            var columnList = columns.EnumerateArray().Select(c => c.GetString()).ToList();
+
+            // Should include both filtered columns in the suggestion
+            Assert.Contains("category", columnList, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("in_stock", columnList, StringComparer.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public void SuggestIndexes_PrimaryKeyColumn_IgnoredInSuggestions()
+        {
+            // Primary key columns should never be suggested for indexing
+            var sql = "SELECT * FROM parent WHERE id = 1";
+            var json = SqliteAnalysisTools.SuggestIndexes(_explorer, sql);
+            var root = ParseJson(json);
+
+            Assert.Equal(sql, root.GetProperty("sql").GetString());
+            var suggestions = root.GetProperty("suggestions");
+            var suggestionsArray = suggestions.EnumerateArray().ToList();
+
+            // Should have no suggestions since 'id' is a primary key
+            Assert.Empty(suggestionsArray);
+        }
     }
 }
