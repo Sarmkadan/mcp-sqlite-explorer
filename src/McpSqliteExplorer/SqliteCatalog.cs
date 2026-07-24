@@ -207,10 +207,18 @@ internal sealed class SqliteCatalog : ISqliteCatalog
         _disposed = true;
     }
 
+    /// <summary>Milliseconds SQLite itself will wait, internally, for a write lock to clear before raising SQLITE_BUSY.</summary>
+    private const int BusyTimeoutMilliseconds = 3000;
+
     private SqliteConnection OpenConnection()
     {
         var connection = new SqliteConnection(_connectionString);
         connection.Open();
+
+        using var pragma = connection.CreateCommand();
+        pragma.CommandText = $"PRAGMA busy_timeout = {BusyTimeoutMilliseconds};";
+        pragma.ExecuteNonQuery();
+
         return connection;
     }
 

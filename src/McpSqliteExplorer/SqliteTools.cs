@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using ModelContextProtocol.Server;
 
 namespace McpSqliteExplorer;
@@ -105,17 +106,31 @@ public sealed class SqliteTools
     /// Runs a tool body and serialises its result. Validation and lookup failures
     /// (bad table name, rejected write statement) are returned as a structured
     /// <c>{ "error": ... }</c> payload so the calling agent gets an actionable
-    /// message instead of an opaque framework error.
+    /// message instead of an opaque framework error. The body is executed through
+    /// <see cref="SqliteExplorer.ExecuteWithRetryAsync{T}"/>, so transient
+    /// <c>SQLITE_BUSY</c>/<c>SQLITE_LOCKED</c> errors from a concurrent writer are
+    /// retried with backoff before either succeeding or surfacing a clear "database
+    /// busy" error instead of a raw exception.
     /// </summary>
+    /// <param name="body">The tool logic to execute; its return value is serialised as JSON.</param>
+    /// <returns>A JSON payload with either the tool's result or a structured error.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is null.</exception>
     internal static string Guarded(Func<object> body)
     {
+        ArgumentNullException.ThrowIfNull(body);
+
         try
         {
-            return Serialize(body());
+            var result = SqliteExplorer.ExecuteWithRetryAsync(body).GetAwaiter().GetResult();
+            return Serialize(result);
         }
         catch (Exception ex) when (ex is ArgumentException or FileNotFoundException or InvalidOperationException)
         {
             return Serialize(new { error = ex.Message });
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode is 5 or 6)
+        {
+            return Serialize(new { error = "database busy: the SQLite file is locked by another process; retry the call once the writer has finished." });
         }
     }
 

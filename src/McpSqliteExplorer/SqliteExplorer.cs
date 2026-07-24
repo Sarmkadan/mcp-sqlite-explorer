@@ -89,12 +89,62 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
         _disposed = true;
     }
 
+    /// <summary>Milliseconds SQLite itself will wait, internally, for a write lock to clear before raising SQLITE_BUSY.</summary>
+    private const int BusyTimeoutMilliseconds = 3000;
+
+    /// <summary>Capped exponential backoff (in milliseconds) applied between retry attempts by <see cref="ExecuteWithRetryAsync{T}"/>.</summary>
+    private static readonly int[] RetryDelaysMilliseconds = [50, 150, 400];
+
     private SqliteConnection OpenConnection()
     {
         var connection = new SqliteConnection(_connectionString);
         connection.Open();
+
+        // busy_timeout makes SQLite itself wait (and retry internally) before
+        // surfacing SQLITE_BUSY; ExecuteWithRetryAsync then covers the case where
+        // even that wait is not enough because a writer is holding the lock longer.
+        using var pragma = connection.CreateCommand();
+        pragma.CommandText = $"PRAGMA busy_timeout = {BusyTimeoutMilliseconds};";
+        pragma.ExecuteNonQuery();
+
         return connection;
     }
+
+    /// <summary>
+    /// Executes <paramref name="operation"/>, retrying with capped exponential
+    /// backoff (50ms, 150ms, 400ms) when SQLite reports <c>SQLITE_BUSY</c> (5) or
+    /// <c>SQLITE_LOCKED</c> (6) - the transient errors expected when another
+    /// process is writing to the same database file. Any other exception, or a
+    /// busy/locked error on the final attempt, propagates to the caller.
+    /// </summary>
+    /// <typeparam name="T">Return type of <paramref name="operation"/>.</typeparam>
+    /// <param name="operation">The synchronous SQLite operation to run.</param>
+    /// <param name="cancellationToken">Token observed both before each attempt and while waiting between retries.</param>
+    /// <returns>The result of the first successful invocation of <paramref name="operation"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="operation"/> is null.</exception>
+    /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> is cancelled.</exception>
+    /// <exception cref="SqliteException">Rethrown when a non-retriable SQLite error occurs, or a busy/locked error persists past the last retry.</exception>
+    public static async Task<T> ExecuteWithRetryAsync<T>(Func<T> operation, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        for (var attempt = 0; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                return operation();
+            }
+            catch (SqliteException ex) when (IsBusyOrLocked(ex) && attempt < RetryDelaysMilliseconds.Length)
+            {
+                await Task.Delay(RetryDelaysMilliseconds[attempt], cancellationToken).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>Returns true when the SQLite error indicates a transient lock held by another connection (SQLITE_BUSY or SQLITE_LOCKED).</summary>
+    private static bool IsBusyOrLocked(SqliteException ex) => ex.SqliteErrorCode is 5 or 6;
 
     /// <summary>Lists user tables and views, skipping SQLite's internal bookkeeping tables.</summary>
     public IReadOnlyList<TableInfo> ListTables()
