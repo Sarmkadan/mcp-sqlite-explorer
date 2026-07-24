@@ -796,8 +796,3 @@ public sealed record QueryResult(
     string? TimeoutMessage = null,
     int RowsBeforeTimeout = 0);
 
-[Obsolete("Use TableProfile instead. This type will be removed in a future version.")]
-public sealed record ColumnStat(string Name, int NullCount);
-
-[Obsolete("Use TableProfile instead. This type will be removed in a future version.")]
-public sealed record TableStatsResult(int RowCount, IReadOnlyList<ColumnStat> ColumnStats);
