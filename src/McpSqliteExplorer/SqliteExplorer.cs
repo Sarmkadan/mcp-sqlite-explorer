@@ -294,7 +294,7 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
             ));
         }
 
-        return new TableProfile(safeName, rowCount, profiles);
+        return new TableProfile(safeName, rowCount, profiles, IsSampled: false, RowsScanned: rowCount);
     }
 
     private QueryResult ExecuteReadOnly(string sql, int cap, int timeBudgetSeconds = 15)

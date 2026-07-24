@@ -78,11 +78,17 @@ public sealed class SqliteAnalysisTools
         });
 
     [McpServerTool(Name = "profile_table")]
-    [Description("Profile every column of a table: row count, null count and rate, distinct cardinality, min/max, and the most frequent values. Computed inside SQLite, so it is safe on large tables.")]
+    [Description("Profile every column of a table: row count, null count and rate, distinct cardinality, min/max, and the most frequent values, computed in a single pass over the data. Tables larger than sampleRows are profiled from a leading sample instead of a full scan, with the result flagged as sampled.")]
     public static string ProfileTable(
         SqliteExplorer explorer,
-        [Description("Name of the table to profile.")] string table) =>
-        SqliteTools.Guarded(() => explorer.ProfileTable(table));
+        [Description("Name of the table to profile.")] string table,
+        [Description("Row budget before switching to a sample instead of a full scan (default 100000).")] long sampleRows = SqliteExplorer.DefaultProfileSampleRows)
+    {
+        ArgumentNullException.ThrowIfNull(explorer);
+        ArgumentException.ThrowIfNullOrEmpty(table);
+
+        return SqliteTools.Guarded(() => explorer.ProfileTable(table, sampleRows));
+    }
 
     [McpServerTool(Name = "table_stats")]
     [Description("Per-table size overview: row count, column count, index count and on-disk size estimate (when the SQLite build exposes dbstat).")]

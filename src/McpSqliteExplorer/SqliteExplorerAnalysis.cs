@@ -12,6 +12,17 @@ public sealed partial class SqliteExplorer
     /// <summary>Number of most-frequent values reported per column by profiling.</summary>
     public const int TopValueCount = 5;
 
+    /// <summary>Default row budget for <see cref="ProfileTable"/> before it switches to sampling.</summary>
+    public const long DefaultProfileSampleRows = 100_000;
+
+    /// <summary>
+    /// Maximum number of distinct values tracked in memory per column while profiling.
+    /// Columns that stay within this cap get exact distinct counts and exact top-N
+    /// frequencies (via a follow-up GROUP BY); columns that exceed it are treated as
+    /// high-cardinality and reported with approximate figures gathered during the scan.
+    /// </summary>
+    private const int ProfileDistinctCap = 2_000;
+
     /// <summary>
     /// Runs <c>EXPLAIN QUERY PLAN</c> for a read-only SELECT and returns the plan
     /// tree SQLite would use. The statement itself is never executed, but it is
@@ -47,83 +58,221 @@ public sealed partial class SqliteExplorer
 
     /// <summary>
     /// Profiles every column of a table: row count, null count/rate, distinct
-    /// cardinality, min/max, and the most frequent values. All numbers are computed
-    /// by SQLite itself, so the whole table is never pulled into memory.
+    /// cardinality, min/max, and the most frequent values. Null counts, min/max and
+    /// approximate distinct counts for all columns are computed together in a single
+    /// pass over the row set instead of one query per column; only low-cardinality
+    /// columns get a follow-up exact <c>GROUP BY</c> for their top-N frequencies.
+    /// Tables larger than <paramref name="sampleRows"/> are profiled from a leading
+    /// sample rather than scanned in full, and the result is flagged accordingly.
     /// </summary>
-    public TableProfile ProfileTable(string table)
+    /// <param name="table">Name of the table to profile.</param>
+    /// <param name="sampleRows">
+    /// Maximum number of rows to scan. Tables with more rows than this are profiled
+    /// from a <c>LIMIT</c>-bounded sample instead of the full table. Defaults to
+    /// <see cref="DefaultProfileSampleRows"/>.
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="table"/> is null/empty, does not exist, or <paramref name="sampleRows"/> is not positive.
+    /// </exception>
+    public TableProfile ProfileTable(string table, long sampleRows = DefaultProfileSampleRows)
     {
+        ArgumentException.ThrowIfNullOrEmpty(table);
+        if (sampleRows <= 0)
+            throw new ArgumentException("Sample row budget must be positive.", nameof(sampleRows));
+
         var safeName = RequireExistingTable(table);
         var columns = DescribeTable(safeName);
         var quotedTable = QuoteIdentifier(safeName);
 
         using var connection = OpenConnection();
 
-        long rowCount;
+        long totalRowCount;
         using (var countCommand = connection.CreateCommand())
         {
             countCommand.CommandText = $"SELECT COUNT(*) FROM {quotedTable};";
-            rowCount = Convert.ToInt64(countCommand.ExecuteScalar());
+            totalRowCount = Convert.ToInt64(countCommand.ExecuteScalar());
         }
 
-        var profiles = new List<ColumnProfile>();
-        foreach (var column in columns)
+        var isSampled = totalRowCount > sampleRows;
+        var quotedColumns = columns.Select(c => QuoteIdentifier(c.Name)).ToList();
+        var selectList = string.Join(", ", quotedColumns);
+
+        using var scanCommand = connection.CreateCommand();
+        scanCommand.CommandText = isSampled
+            ? $"SELECT {selectList} FROM {quotedTable} LIMIT $limit;"
+            : $"SELECT {selectList} FROM {quotedTable};";
+        if (isSampled)
+            scanCommand.Parameters.AddWithValue("$limit", sampleRows);
+
+        var accumulators = columns.Select(c => new ColumnAccumulator()).ToList();
+        long rowsScanned = 0;
+
+        using (var reader = scanCommand.ExecuteReader())
         {
-            var quotedColumn = QuoteIdentifier(column.Name);
-
-            using var statsCommand = connection.CreateCommand();
-            statsCommand.CommandText =
-                $"""
-                SELECT COUNT({quotedColumn}), COUNT(DISTINCT {quotedColumn}),
-                       MIN({quotedColumn}), MAX({quotedColumn})
-                FROM {quotedTable};
-                """;
-
-            long nonNullCount;
-            long distinctCount;
-            object? min;
-            object? max;
-            using (var reader = statsCommand.ExecuteReader())
+            while (reader.Read())
             {
-                reader.Read();
-                nonNullCount = reader.GetInt64(0);
-                distinctCount = reader.GetInt64(1);
-                min = reader.IsDBNull(2) ? null : reader.GetValue(2);
-                max = reader.IsDBNull(3) ? null : reader.GetValue(3);
+                rowsScanned++;
+                for (var i = 0; i < accumulators.Count; i++)
+                    accumulators[i].Observe(reader.IsDBNull(i) ? null : reader.GetValue(i));
             }
+        }
 
-            using var topCommand = connection.CreateCommand();
-            topCommand.CommandText =
-                $"""
-                SELECT {quotedColumn} AS value, COUNT(*) AS occurrences
-                FROM {quotedTable}
-                WHERE {quotedColumn} IS NOT NULL
-                GROUP BY {quotedColumn}
-                ORDER BY occurrences DESC, value
-                LIMIT {TopValueCount};
-                """;
+        var profiles = new List<ColumnProfile>(columns.Count);
+        for (var i = 0; i < columns.Count; i++)
+        {
+            var column = columns[i];
+            var accumulator = accumulators[i];
+            var nullCount = rowsScanned - accumulator.NonNullCount;
 
-            var topValues = new List<ValueFrequency>();
-            using (var reader = topCommand.ExecuteReader())
-            {
-                while (reader.Read())
-                    topValues.Add(new ValueFrequency(
-                        reader.IsDBNull(0) ? null : reader.GetValue(0),
-                        reader.GetInt64(1)));
-            }
+            var topValues = accumulator.IsLowCardinality
+                ? accumulator.TopValues(TopValueCount)
+                : QueryExactTopValues(connection, quotedTable, quotedColumns[i], isSampled, sampleRows);
 
-            var nullCount = rowCount - nonNullCount;
             profiles.Add(new ColumnProfile(
                 Name: column.Name,
                 Type: column.Type,
                 NullCount: nullCount,
-                NullRate: rowCount == 0 ? 0 : Math.Round((double)nullCount / rowCount, 4),
-                DistinctCount: distinctCount,
-                Min: min,
-                Max: max,
+                NullRate: rowsScanned == 0 ? 0 : Math.Round((double)nullCount / rowsScanned, 4),
+                DistinctCount: accumulator.DistinctCount,
+                Min: accumulator.Min,
+                Max: accumulator.Max,
                 TopValues: topValues));
         }
 
-        return new TableProfile(safeName, rowCount, profiles);
+        return new TableProfile(safeName, totalRowCount, profiles, isSampled, rowsScanned);
+    }
+
+    /// <summary>
+    /// Runs an exact <c>GROUP BY</c> for a single high-cardinality column's top-N
+    /// value frequencies. Reserved for columns whose distinct-value set overflowed
+    /// the in-memory cap during the single-pass scan, since a full grouping there
+    /// would defeat the point of the cap.
+    /// </summary>
+    private static IReadOnlyList<ValueFrequency> QueryExactTopValues(
+        SqliteConnection connection, string quotedTable, string quotedColumn, bool isSampled, long sampleRows)
+    {
+        using var topCommand = connection.CreateCommand();
+        var source = isSampled
+            ? $"(SELECT {quotedColumn} FROM {quotedTable} LIMIT {sampleRows})"
+            : quotedTable;
+        topCommand.CommandText =
+            $"""
+            SELECT {quotedColumn} AS value, COUNT(*) AS occurrences
+            FROM {source}
+            WHERE {quotedColumn} IS NOT NULL
+            GROUP BY {quotedColumn}
+            ORDER BY occurrences DESC, value
+            LIMIT {TopValueCount};
+            """;
+
+        var topValues = new List<ValueFrequency>();
+        using var reader = topCommand.ExecuteReader();
+        while (reader.Read())
+            topValues.Add(new ValueFrequency(
+                reader.IsDBNull(0) ? null : reader.GetValue(0),
+                reader.GetInt64(1)));
+
+        return topValues;
+    }
+
+    /// <summary>
+    /// Accumulates null count, min/max and (up to <see cref="ProfileDistinctCap"/>)
+    /// exact distinct-value frequencies for one column across a single pass over a
+    /// result set.
+    /// </summary>
+    private sealed class ColumnAccumulator
+    {
+        private readonly Dictionary<object, long> _frequencies = new();
+
+        /// <summary>Number of non-null values observed.</summary>
+        public long NonNullCount { get; private set; }
+
+        /// <summary>Smallest non-null value observed, by best-effort comparison.</summary>
+        public object? Min { get; private set; }
+
+        /// <summary>Largest non-null value observed, by best-effort comparison.</summary>
+        public object? Max { get; private set; }
+
+        /// <summary>
+        /// True while the distinct-value set has stayed within <see cref="ProfileDistinctCap"/>,
+        /// meaning <see cref="_frequencies"/> holds every distinct value seen so far.
+        /// </summary>
+        public bool IsLowCardinality { get; private set; } = true;
+
+        /// <summary>
+        /// Exact count while <see cref="IsLowCardinality"/> is true; once the cap overflows this
+        /// stays pinned at the cap as an approximate lower bound.
+        /// </summary>
+        public long DistinctCount { get; private set; }
+
+        /// <summary>Records one observed value (or null) for this column.</summary>
+        public void Observe(object? value)
+        {
+            if (value is null)
+                return;
+
+            NonNullCount++;
+            UpdateMinMax(value);
+
+            if (!IsLowCardinality)
+                return;
+
+            if (_frequencies.TryGetValue(value, out var count))
+            {
+                _frequencies[value] = count + 1;
+                return;
+            }
+
+            if (_frequencies.Count >= ProfileDistinctCap)
+            {
+                IsLowCardinality = false;
+                return;
+            }
+
+            _frequencies[value] = 1;
+            DistinctCount = _frequencies.Count;
+        }
+
+        /// <summary>
+        /// Returns the top <paramref name="count"/> most frequent values observed. Only
+        /// meaningful while <see cref="IsLowCardinality"/> is true, since that is the only
+        /// case where the full frequency table was retained.
+        /// </summary>
+        public IReadOnlyList<ValueFrequency> TopValues(int count) =>
+            _frequencies
+                .OrderByDescending(kv => kv.Value)
+                .ThenBy(kv => kv.Key, Comparer<object>.Create(CompareValues))
+                .Take(count)
+                .Select(kv => new ValueFrequency(kv.Key, kv.Value))
+                .ToList();
+
+        private void UpdateMinMax(object value)
+        {
+            if (Min is null || CompareValues(value, Min) < 0)
+                Min = value;
+            if (Max is null || CompareValues(value, Max) > 0)
+                Max = value;
+        }
+
+        /// <summary>
+        /// Best-effort ordering across SQLite's dynamically typed column values: numeric
+        /// types compare numerically, everything else falls back to ordinal string
+        /// comparison, matching SQLite's own type-then-value collation closely enough
+        /// for profiling purposes without pulling in a full affinity-aware comparer.
+        /// </summary>
+        private static int CompareValues(object a, object b)
+        {
+            if (a is IComparable comparableA && a.GetType() == b.GetType())
+                return comparableA.CompareTo(b);
+
+            if (IsNumeric(a) && IsNumeric(b))
+                return Convert.ToDouble(a).CompareTo(Convert.ToDouble(b));
+
+            return string.CompareOrdinal(Convert.ToString(a), Convert.ToString(b));
+        }
+
+        private static bool IsNumeric(object value) =>
+            value is byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal;
     }
 
     /// <summary>
@@ -269,7 +418,9 @@ public sealed record QueryPlanNode(long Id, long Parent, string Detail);
 public sealed record TableProfile(
     string Table,
     long RowCount,
-    IReadOnlyList<ColumnProfile> Columns);
+    IReadOnlyList<ColumnProfile> Columns,
+    bool IsSampled,
+    long RowsScanned);
 
 public sealed record ColumnProfile(
     string Name,
