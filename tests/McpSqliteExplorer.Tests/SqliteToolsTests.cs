@@ -404,5 +404,148 @@ namespace McpSqliteExplorer.Tests
         }
 
         #endregion
+
+    #region Boundary behavior tests for capped SELECT
+
+    [Fact]
+    public void SampleRows_WithZeroLimit_ClampsToDefault()
+    {
+        // Requesting a row limit of 0 should clamp to DefaultRowCap (100)
+        var result = _explorer.SampleRows("authors", limit: 0);
+
+        Assert.Equal(SqliteExplorer.DefaultRowCap, result.AppliedRowCap);
+        Assert.False(result.Truncated);
+        Assert.Equal(3, result.Rows.Count); // Test database has 3 authors
+    }
+
+    [Fact]
+    public void SampleRows_WithNegativeLimit_ClampsToDefault()
+    {
+        // Requesting a negative limit should clamp to DefaultRowCap (100)
+        var result = _explorer.SampleRows("authors", limit: -5);
+
+        Assert.Equal(SqliteExplorer.DefaultRowCap, result.AppliedRowCap);
+        Assert.False(result.Truncated);
+        Assert.Equal(3, result.Rows.Count); // Test database has 3 authors
+    }
+
+    [Fact]
+    public void SampleRows_WithLimitAboveMax_ClampsToMax()
+    {
+        // Requesting a limit above MaxRowCap (1000) should clamp to MaxRowCap
+        var result = _explorer.SampleRows("authors", limit: 5000);
+
+        Assert.Equal(SqliteExplorer.MaxRowCap, result.AppliedRowCap);
+        Assert.False(result.Truncated);
+        Assert.Equal(3, result.Rows.Count); // Test database has only 3 authors
+    }
+
+    [Fact]
+    public void SampleRows_WithLimitAtMax_WorksCorrectly()
+    {
+        // Requesting exactly MaxRowCap should work without clamping
+        var result = _explorer.SampleRows("authors", limit: SqliteExplorer.MaxRowCap);
+
+        Assert.Equal(SqliteExplorer.MaxRowCap, result.AppliedRowCap);
+        Assert.False(result.Truncated);
+        Assert.Equal(3, result.Rows.Count);
+    }
+
+    [Fact]
+    public void SampleRows_WithLimitOne_ReturnsSingleRow()
+    {
+        // Requesting limit of 1 should return exactly 1 row
+        var result = _explorer.SampleRows("authors", limit: 1);
+
+        Assert.Equal(1, result.AppliedRowCap);
+        Assert.False(result.Truncated);
+        Assert.Single(result.Rows);
+    }
+
+    [Fact]
+    public void SampleRows_WithNonExistentTable_ReturnsStructuredError()
+    {
+        // Querying a table name that doesn't exist should return a specific, documented exception type
+        var json = SqliteTools.SampleRows(_explorer, "nonexistent_table");
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        Assert.True(root.TryGetProperty("error", out var error));
+        Assert.Contains("No such table or view", error.GetString());
+        Assert.DoesNotContain("SQLiteException", error.GetString());
+    }
+
+    [Fact]
+    public void SampleRows_WithEmptyTable_ReturnsEmptyRowsArray()
+    {
+        // Create an empty table for testing
+        using var tempConn = new Microsoft.Data.Sqlite.SqliteConnection(
+            new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            {
+                DataSource = _db.Path,
+                Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadWrite
+            }.ToString());
+        tempConn.Open();
+
+        using var tempCmd = tempConn.CreateCommand();
+        tempCmd.CommandText = "CREATE TABLE IF NOT EXISTS empty_table (id INTEGER PRIMARY KEY, name TEXT);";
+        tempCmd.ExecuteNonQuery();
+
+        tempCmd.CommandText = "DELETE FROM empty_table;";
+        tempCmd.ExecuteNonQuery();
+        tempConn.Close();
+
+        // Query the empty table
+        var result = _explorer.SampleRows("empty_table", limit: 10);
+
+        Assert.Equal(10, result.AppliedRowCap);
+        Assert.False(result.Truncated);
+        Assert.Empty(result.Rows);
+        Assert.Empty(result.Rows);
+    }
+
+    [Fact]
+    public void SampleRows_WithNullValues_RepresentsNullConsistently()
+    {
+        // Querying a table with NULL values should represent NULL as JSON null
+        var result = _explorer.SampleRows("authors", limit: 10);
+
+        // The test database has an author with NULL country
+        Assert.Contains(result.Columns, col => col == "country");
+
+        // Find the row with NULL country (author with id = 3)
+        var rowWithNull = result.Rows.FirstOrDefault(row => row[Array.IndexOf(result.Columns.ToArray(), "country")] is null);
+        Assert.NotNull(rowWithNull);
+
+        // NULL should be represented as actual null, not as string "NULL" or missing value
+        var countryIndex = Array.IndexOf(result.Columns.ToArray(), "country");
+        var nullValue = result.Rows[2][countryIndex]; // Third author has NULL country
+        Assert.Null(nullValue);
+    }
+
+    [Fact]
+    public void SampleRows_WithLimitGreaterThanRowCount_ReturnsAllRows()
+    {
+        // Requesting more rows than exist should return all available rows without truncation
+        var result = _explorer.SampleRows("authors", limit: 1000);
+
+        Assert.Equal(1000, result.AppliedRowCap);
+        Assert.False(result.Truncated);
+        Assert.Equal(3, result.Rows.Count); // Test database has only 3 authors
+    }
+
+    [Fact]
+    public void SampleRows_WithLimitEqualToRowCount_ReturnsAllRows()
+    {
+        // Requesting exactly the number of rows that exist should return all rows
+        var result = _explorer.SampleRows("authors", limit: 3);
+
+        Assert.Equal(3, result.AppliedRowCap);
+        Assert.False(result.Truncated);
+        Assert.Equal(3, result.Rows.Count);
+    }
+
+    #endregion
     }
 }
