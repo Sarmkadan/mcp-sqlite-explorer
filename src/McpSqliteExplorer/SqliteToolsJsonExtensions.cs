@@ -7,17 +7,17 @@ namespace McpSqliteExplorer;
 /// </summary>
 public static class SqliteToolsJsonExtensions
 {
-    private static readonly JsonSerializerOptions JsonOptions = SqliteValueConverter.CreateJsonOptions(
-        camelCaseProperties: true,
-        writeIndented: false,
-        includeObjectConverter: true
-    );
+    private static readonly JsonSerializerOptions JsonOptions = CreateToolsJsonOptions();
 
-    static SqliteToolsJsonExtensions()
+    private static JsonSerializerOptions CreateToolsJsonOptions()
     {
-        // Add the record converters after creating the base options
-        JsonOptions.Converters.Add(new SqliteValueConverter.ValueFrequencyConverter());
-        JsonOptions.Converters.Add(new SqliteValueConverter.QueryResultConverter());
+        // Create new options based on DefaultOptions but with additional converters
+        var options = new JsonSerializerOptions(SharedJsonExtensions.DefaultOptions)
+        {
+            // Add the record converters after creating the base options
+            Converters = { new SqliteValueConverter.ValueFrequencyConverter(), new SqliteValueConverter.QueryResultConverter() }
+        };
+        return options;
     }
 
     /// <summary>
@@ -32,11 +32,7 @@ public static class SqliteToolsJsonExtensions
         ArgumentNullException.ThrowIfNull(value);
 
         var options = indented
-            ? SqliteValueConverter.CreateJsonOptions(
-                camelCaseProperties: true,
-                writeIndented: true,
-                includeObjectConverter: true
-            )
+            ? SharedJsonExtensions.PrettyOptions
             : JsonOptions;
 
         return JsonSerializer.Serialize(value, options);
@@ -61,7 +57,7 @@ public static class SqliteToolsJsonExtensions
     /// <param name="json">The JSON string to deserialize.</param>
     /// <param name="value">Receives the deserialized <see cref="SqliteTools"/> instance if successful; otherwise, <see langword="null"/>.</param>
     /// <returns><see langword="true"/> if deserialization succeeds; otherwise, <see langword="false"/>.</returns>
-/// <exception cref="ArgumentNullException">Thrown when <paramref name="json"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="json"/> is <see langword="null"/>.</exception>
     public static bool TryFromJson(string json, out SqliteTools? value)
     {
         ArgumentNullException.ThrowIfNull(json);
