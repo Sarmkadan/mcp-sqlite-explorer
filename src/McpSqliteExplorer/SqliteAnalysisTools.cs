@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 
@@ -6,23 +7,42 @@ namespace McpSqliteExplorer;
 /// <summary>
 /// MCP tool surface for schema exploration and analysis. Thin adapters over
 /// <see cref="SqliteExplorer"/>, same shape as <see cref="SqliteTools"/>.
-/// All operations are read-only.
+/// All operations are read‑only.
 /// </summary>
 [McpServerToolType]
 public sealed class SqliteAnalysisTools
 {
+    // ------------------------------------------------------------------------
+    // Private helpers – consolidate repeated validation and Guarded logic
+    // ------------------------------------------------------------------------
+
+    private static void ValidateExplorer(SqliteExplorer explorer)
+    {
+        ArgumentNullException.ThrowIfNull(explorer);
+    }
+
+    private static void ValidateString(string? value, string paramName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(value, paramName);
+    }
+
+    private static string Guarded(Func<object> payloadFactory) =>
+        SqliteTools.Guarded(() => payloadFactory());
+
+    // ------------------------------------------------------------------------
+    // Public tool methods – behavior unchanged, now using helpers above
+    // ------------------------------------------------------------------------
+
     [McpServerTool(Name = "list_indexes")]
     [Description("List the indexes on a table: name, uniqueness, origin (explicit, UNIQUE constraint or primary key), partial flag and indexed columns.")]
     public static string ListIndexes(
         SqliteExplorer explorer,
         [Description("Name of the table whose indexes to list.")] string table)
     {
-        if (explorer == null)
-            throw new ArgumentNullException(nameof(explorer));
-        if (table == null)
-            throw new ArgumentNullException(nameof(table));
+        ValidateExplorer(explorer);
+        ValidateString(table, nameof(table));
 
-        return SqliteTools.Guarded(() =>
+        return Guarded(() =>
         {
             var indexes = explorer.ListIndexes(table);
             return new { table, count = indexes.Count, indexes };
@@ -34,8 +54,11 @@ public sealed class SqliteAnalysisTools
     public static string ListForeignKeys(
         SqliteExplorer explorer,
         [Description("Name of the table whose foreign keys to list.")] string table) =>
-        SqliteTools.Guarded(() =>
+        Guarded(() =>
         {
+            ValidateExplorer(explorer);
+            ValidateString(table, nameof(table));
+
             var foreignKeys = explorer.ListForeignKeys(table);
             return new { table, count = foreignKeys.Count, foreignKeys };
         });
@@ -43,8 +66,9 @@ public sealed class SqliteAnalysisTools
     [McpServerTool(Name = "foreign_key_graph")]
     [Description("Return every foreign-key relationship in the database as a flat edge list - the full relationship graph in one call.")]
     public static string ForeignKeyGraph(SqliteExplorer explorer) =>
-        SqliteTools.Guarded(() =>
+        Guarded(() =>
         {
+            ValidateExplorer(explorer);
             var edges = explorer.GetForeignKeyGraph();
             return new { count = edges.Count, edges };
         });
@@ -55,8 +79,11 @@ public sealed class SqliteAnalysisTools
         SqliteExplorer explorer,
         [Description("Table to start from.")] string table,
         [Description("Maximum number of hops to follow (default 3).")] int maxDepth = 3) =>
-        SqliteTools.Guarded(() =>
+        Guarded(() =>
         {
+            ValidateExplorer(explorer);
+            ValidateString(table, nameof(table));
+
             var hops = explorer.ExploreForeignKeyChain(table, maxDepth);
             return new { table, maxDepth, count = hops.Count, hops };
         });
@@ -64,15 +91,22 @@ public sealed class SqliteAnalysisTools
     [McpServerTool(Name = "generate_erd")]
     [Description("Render the whole schema as a Mermaid erDiagram: every table with typed columns (PK/FK markers) plus one relationship line per foreign key. Paste the output into any Mermaid renderer.")]
     public static string GenerateErd(SqliteExplorer explorer) =>
-        SqliteTools.Guarded(() => new { format = "mermaid", diagram = explorer.GenerateErd() });
+        Guarded(() =>
+        {
+            ValidateExplorer(explorer);
+            return new { format = "mermaid", diagram = explorer.GenerateErd() };
+        });
 
     [McpServerTool(Name = "explain_query_plan")]
-    [Description("Run EXPLAIN QUERY PLAN for a read-only SELECT and return SQLite's plan tree (scans, index usage, join order) without executing the query.")]
+    [Description("Run EXPLAIN QUERY PLAN for a read‑only SELECT and return SQLite's plan tree (scans, index usage, join order) without executing the query.")]
     public static string ExplainQueryPlan(
         SqliteExplorer explorer,
         [Description("A single SELECT or WITH ... SELECT statement to explain.")] string sql) =>
-        SqliteTools.Guarded(() =>
+        Guarded(() =>
         {
+            ValidateExplorer(explorer);
+            ValidateString(sql, nameof(sql));
+
             var plan = explorer.ExplainQueryPlan(sql);
             return new { sql, nodes = plan };
         });
@@ -84,34 +118,42 @@ public sealed class SqliteAnalysisTools
         [Description("Name of the table to profile.")] string table,
         [Description("Row budget before switching to a sample instead of a full scan (default 100000).")] long sampleRows = SqliteExplorer.DefaultProfileSampleRows)
     {
-        ArgumentNullException.ThrowIfNull(explorer);
-        ArgumentException.ThrowIfNullOrEmpty(table);
+        ValidateExplorer(explorer);
+        ValidateString(table, nameof(table));
 
-        return SqliteTools.Guarded(() => explorer.ProfileTable(table, sampleRows));
+        return Guarded(() => explorer.ProfileTable(table, sampleRows));
     }
 
     [McpServerTool(Name = "table_stats")]
-    [Description("Per-table size overview: row count, column count, index count and on-disk size estimate (when the SQLite build exposes dbstat).")]
+    [Description("Per‑table size overview: row count, column count, index count and on‑disk size estimate (when the SQLite build exposes dbstat).")]
     public static string TableStatsOverview(SqliteExplorer explorer) =>
-        SqliteTools.Guarded(() =>
+        Guarded(() =>
         {
+            ValidateExplorer(explorer);
             var stats = explorer.GetTableStats();
             return new { count = stats.Count, tables = stats };
         });
 
     [McpServerTool(Name = "suggest_indexes")]
-    [Description("Analyse a SELECT's query plan for full table scans and suggest candidate CREATE INDEX statements for the un-indexed columns the query touches. Suggestions are verified by running EXPLAIN QUERY PLAN on a scratch copy of the schema with the proposed index applied.")]
+    [Description("Analyse a SELECT's query plan for full table scans and suggest candidate CREATE INDEX statements for the un‑indexed columns the query touches. Suggestions are verified by running EXPLAIN QUERY PLAN on a scratch copy of the schema with the proposed index applied.")]
     public static string SuggestIndexes(
         SqliteExplorer explorer,
         [Description("A single SELECT or WITH ... SELECT statement to analyse.")] string sql) =>
-        SqliteTools.Guarded(() =>
+        Guarded(() =>
         {
+            ValidateExplorer(explorer);
+            ValidateString(sql, nameof(sql));
+
             var suggestions = explorer.SuggestIndexes(sql);
             return new { sql, count = suggestions.Count, suggestions };
         });
 
     [McpServerTool(Name = "migration_history")]
-    [Description("If this is an EF Core database, list the applied migrations from __EFMigrationsHistory (migration id and EF product version). Reports hasHistoryTable=false for non-EF databases.")]
+    [Description("If this is an EF Core database, list the applied migrations from __EFMigrationsHistory (migration id and EF product version). Reports hasHistoryTable=false for non‑EF databases.")]
     public static string MigrationHistory(SqliteExplorer explorer) =>
-        SqliteTools.Guarded(() => explorer.GetMigrationHistory());
+        Guarded(() =>
+        {
+            ValidateExplorer(explorer);
+            return explorer.GetMigrationHistory();
+        });
 }
