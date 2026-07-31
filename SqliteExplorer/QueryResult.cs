@@ -1,0 +1,1 @@
+public string FormatCell(string value, int maxLength) // truncate BLOB/text values over 1KB with a suffix like "... (N bytes)"
