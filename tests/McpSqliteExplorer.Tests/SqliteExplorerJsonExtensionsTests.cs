@@ -4,8 +4,14 @@ using Xunit;
 
 namespace McpSqliteExplorer.Tests
 {
+    /// <summary>
+    /// Tests for the <see cref="SqliteExplorerJsonExtensions"/> class.
+    /// </summary>
     public sealed class SqliteExplorerJsonExtensionsTests
     {
+        /// <summary>
+        /// Verifies that ToJson() returns a valid JSON string when given a valid SqliteExplorer instance.
+        /// </summary>
         [Fact]
         public void ToJson_WithValidExplorer_ReturnsValidJsonString()
         {
@@ -18,6 +24,9 @@ namespace McpSqliteExplorer.Tests
             Assert.EndsWith("}", json);
         }
 
+        /// <summary>
+        /// Verifies that ToJson(indented: true) returns formatted JSON with newlines.
+        /// </summary>
         [Fact]
         public void ToJson_WithIndentedTrue_ReturnsFormattedJson()
         {
@@ -28,6 +37,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Contains("\n", json);
         }
 
+        /// <summary>
+        /// Verifies that ToJson(indented: false) returns compact JSON with minimal whitespace.
+        /// </summary>
         [Fact]
         public void ToJson_WithIndentedFalse_ReturnsCompactJson()
         {
@@ -39,6 +51,9 @@ namespace McpSqliteExplorer.Tests
             Assert.True(compactLength < json.Length * 0.9);
         }
 
+        /// <summary>
+        /// Verifies that ToJson() throws an ArgumentNullException when the SqliteExplorer instance is null.
+        /// </summary>
         [Fact]
         public void ToJson_WithNullValue_ThrowsArgumentNullException()
         {
@@ -47,6 +62,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Equal("value", ex.ParamName);
         }
 
+        /// <summary>
+        /// Verifies that ToJson(indented: true) throws an ArgumentNullException when the SqliteExplorer instance is null.
+        /// </summary>
         [Fact]
         public void ToJson_WithNullValueAndIndented_ThrowsArgumentNullException()
         {
@@ -55,6 +73,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Equal("value", ex.ParamName);
         }
 
+        /// <summary>
+        /// Verifies that FromJson(string) throws an ArgumentNullException when the JSON string is null.
+        /// </summary>
         [Fact]
         public void FromJson_WithNullJson_ThrowsArgumentNullException()
         {
@@ -62,6 +83,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Equal("json", ex.ParamName);
         }
 
+        /// <summary>
+        /// Verifies that TryFromJson(string, out SqliteExplorer?) throws an ArgumentNullException when the JSON string is null.
+        /// </summary>
         [Fact]
         public void TryFromJson_WithNullJson_ThrowsArgumentNullException()
         {
@@ -69,6 +93,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Equal("json", ex.ParamName);
         }
 
+        /// <summary>
+        /// Verifies that FromJson(string) returns null when given an empty JSON string.
+        /// </summary>
         [Fact]
         public void FromJson_WithEmptyJson_ReturnsNull()
         {
@@ -76,6 +103,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Null(result);
         }
 
+        /// <summary>
+        /// Verifies that TryFromJson(string, out SqliteExplorer?) returns false and null when given an empty JSON string.
+        /// </summary>
         [Fact]
         public void TryFromJson_WithEmptyJson_ReturnsFalseAndNull()
         {
@@ -84,6 +114,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Null(value);
         }
 
+        /// <summary>
+        /// Verifies that FromJson(string) returns null when given a JSON string containing only whitespace.
+        /// </summary>
         [Fact]
         public void FromJson_WithWhitespaceJson_ReturnsNull()
         {
@@ -91,6 +124,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Null(result);
         }
 
+        /// <summary>
+        /// Verifies that TryFromJson(string, out SqliteExplorer?) returns false and null when given a JSON string containing only whitespace.
+        /// </summary>
         [Fact]
         public void TryFromJson_WithWhitespaceJson_ReturnsFalseAndNull()
         {
@@ -99,6 +135,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Null(value);
         }
 
+        /// <summary>
+        /// Verifies that FromJson(string) returns null when given an invalid JSON string.
+        /// </summary>
         [Fact]
         public void FromJson_WithInvalidJson_ReturnsNull()
         {
@@ -106,6 +145,9 @@ namespace McpSqliteExplorer.Tests
             Assert.Null(result);
         }
 
+        /// <summary>
+        /// Verifies that TryFromJson(string, out SqliteExplorer?) returns false and null when given an invalid JSON string.
+        /// </summary>
         [Fact]
         public void TryFromJson_WithInvalidJson_ReturnsFalseAndNull()
         {
@@ -113,6 +155,5 @@ namespace McpSqliteExplorer.Tests
             Assert.False(result);
             Assert.Null(value);
         }
-
     }
 }
