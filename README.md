@@ -1,15 +1,25 @@
 
-## SqliteToolsFormattingTests
+## SqliteToolsExtensionsTests
 
-The SqliteToolsFormattingTests class contains tests for the SqliteToolsFormatting class. It checks the formatting of Sqlite database tables.
+The SqliteToolsExtensionsTests class contains unit tests for the SqliteToolsExtensions class. It verifies the correctness of various extension methods for SqliteTools, including GetTableCount, GetRowCount, GetAllColumns, and GetSchemaSummary.
 
 Example usage:
 ```csharp
-public SqliteToolsFormattingTests
-public void Dispose
-public void ListTables_EmptyDatabase_ReturnsEmptyList
-public void DescribeTable_TableWithAllColumnTypes_ReturnsCorrectDescription
-public void SampleRows_TableWithRows_RowCapEnforced
+using McpSqliteExplorer;
+
+var explorer = new SqliteExplorer("/tmp/test.db");
+
+// Get the count of tables in the database
+var tableCountJson = SqliteToolsExtensions.GetTableCount(explorer);
+
+// Get the row count of a specific table
+var rowCount = SqliteToolsExtensions.GetRowCount(explorer, "users");
+
+// Get all columns across all tables in the database
+var allColumns = SqliteToolsExtensions.GetAllColumns(explorer);
+
+// Get a summary of the database schema
+var schemaSummary = SqliteToolsExtensions.GetSchemaSummary(explorer);
 ```
 
 ## SqliteAnalysisToolsTests
