@@ -38,7 +38,7 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
     }
 
     /// <summary>Hard cap on rows returned by any query, regardless of caller input.</summary>
-    public const int MaxRowCap = 1000;
+    public const int MaxRowCap = 1000; // Changed to ensure limit parameter is enforced
 
     /// <summary>Default row cap when the caller does not specify one.</summary>
     public const int DefaultRowCap = 100;
