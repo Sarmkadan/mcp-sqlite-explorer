@@ -765,8 +765,12 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
         };
     }
 
-    private static string QuoteIdentifier(string identifier) =>
-        '"' + identifier.Replace("\"", "\"\"") + '"';
+    private static string QuoteIdentifier(string identifier)
+    {
+        if (identifier.Contains('"'))
+            throw new ArgumentException($"Identifier contains invalid characters: {identifier}");
+        return '"' + identifier + '"';
+    }
 
     /// <inheritdoc />
     public IReadOnlyList<TableInfo> GetTables() => _catalog.GetTables();
