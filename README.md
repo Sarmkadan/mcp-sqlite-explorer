@@ -70,3 +70,21 @@ public void TestSchemaCapabilities()
     var tableDescription = explorer.DescribeTable("books");
 }
 ```
+
+## SqliteExplorerJsonExtensionsTests
+
+The `SqliteExplorerJsonExtensionsTests` class contains unit tests that verify the JSON serialization and deserialization extension methods for `SqliteExplorer`. It checks correct handling of valid explorers, formatting options, and edge cases such as null, empty, whitespace, or malformed JSON inputs.
+
+Example usage:
+```csharp
+using McpSqliteExplorer.Tests;
+
+var jsonTests = new SqliteExplorerJsonExtensionsTests();
+
+jsonTests.ToJson_WithValidExplorer_ReturnsValidJsonString();
+jsonTests.ToJson_WithIndentedTrue_ReturnsFormattedJson();
+jsonTests.ToJson_WithIndentedFalse_ReturnsCompactJson();
+jsonTests.ToJson_WithNullValue_ThrowsArgumentNullException();
+jsonTests.FromJson_WithNullJson_ThrowsArgumentNullException();
+jsonTests.TryFromJson_WithInvalidJson_ReturnsFalseAndNull();
+```
