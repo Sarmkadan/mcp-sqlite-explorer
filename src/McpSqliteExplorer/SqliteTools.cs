@@ -16,6 +16,11 @@ public sealed class SqliteTools
 {
     private static readonly JsonSerializerOptions JsonOptions = SharedJsonExtensions.PrettyOptions;
 
+    /// <summary>
+    /// List the tables and views in the SQLite database (internal sqlite_* objects are hidden).
+    /// </summary>
+    /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
+    /// <returns>A JSON string containing the count and list of tables.</returns>
     [McpServerTool(Name = "list_tables")]
     [Description("List the tables and views in the SQLite database (internal sqlite_* objects are hidden).")]
     public static string ListTables(SqliteExplorer explorer) =>
@@ -25,6 +30,12 @@ public sealed class SqliteTools
             return new { count = tables.Count, tables };
         });
 
+    /// <summary>
+    /// Describe the columns of a table or view: name, declared type, nullability, default value and primary-key flag.
+    /// </summary>
+    /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
+    /// <param name="table">Name of the table or view to describe.</param>
+    /// <returns>A JSON string containing the table name, column count, and column details.</returns>
     [McpServerTool(Name = "describe_table")]
     [Description("Describe the columns of a table or view: name, declared type, nullability, default value and primary-key flag.")]
     public static string DescribeTable(
@@ -36,6 +47,12 @@ public sealed class SqliteTools
             return new { table, columnCount = columns.Count, columns };
         });
 
+    /// <summary>
+    /// List the indexes defined on a table or view, including uniqueness, origin, partial flag and the indexed columns.
+    /// </summary>
+    /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
+    /// <param name="table">Name of the table or view whose indexes should be listed.</param>
+    /// <returns>A JSON string containing the table name, index count, and index details.</returns>
     [McpServerTool(Name = "list_indexes")]
     [Description("List the indexes defined on a table or view, including uniqueness, origin, partial flag and the indexed columns.")]
     public static string ListIndexes(
@@ -47,6 +64,14 @@ public sealed class SqliteTools
             return new { table, indexCount = indexes.Count, indexes };
         });
 
+    /// <summary>
+    /// Return a small sample of rows from a table so the agent can see representative data.
+    /// </summary>
+    /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
+    /// <param name="table">Name of the table or view to sample.</param>
+    /// <param name="limit">Maximum number of rows to return (1-1000, default 100).</param>
+    /// <param name="timeBudgetSeconds">Maximum execution time in seconds (default 15). Set to 0 to disable timeout.</param>
+    /// <returns>A JSON string containing the sampled rows and related metadata.</returns>
     [McpServerTool(Name = "sample_rows")]
     [Description("Return a small sample of rows from a table so the agent can see representative data.")]
     public static string SampleRows(
@@ -56,6 +81,14 @@ public sealed class SqliteTools
         [Description("Maximum execution time in seconds (default 15). Set to 0 to disable timeout.")] int timeBudgetSeconds = 15) =>
         Guarded(() => ToPayload(explorer.SampleRows(table, limit, timeBudgetSeconds)));
 
+    /// <summary>
+    /// Run a single read-only SELECT (or WITH ... SELECT) query and return the rows, capped for safety. Write statements are rejected.
+    /// </summary>
+    /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
+    /// <param name="sql">A single SELECT or WITH ... SELECT statement. No INSERT/UPDATE/DELETE/DDL and no multiple statements.</param>
+    /// <param name="limit">Maximum number of rows to return (1-1000, default 100).</param>
+    /// <param name="timeBudgetSeconds">Maximum execution time in seconds (default 15). Set to 0 to disable timeout.</param>
+    /// <returns>A JSON string containing the query result payload.</returns>
     [McpServerTool(Name = "run_select")]
     [Description("Run a single read-only SELECT (or WITH ... SELECT) query and return the rows, capped for safety. Write statements are rejected.")]
     public static string RunSelect(
@@ -65,6 +98,12 @@ public sealed class SqliteTools
         [Description("Maximum execution time in seconds (default 15). Set to 0 to disable timeout.")] int timeBudgetSeconds = 15) =>
         Guarded(() => ToPayload(explorer.RunSelect(sql, limit, timeBudgetSeconds)));
 
+    /// <summary>
+    /// Run EXPLAIN QUERY PLAN for a SELECT statement and return the execution plan.
+    /// </summary>
+    /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
+    /// <param name="sql">A single SELECT statement to analyze. Only SELECT statements are permitted.</param>
+    /// <returns>A JSON string containing the plan count and plan details.</returns>
     [McpServerTool(Name = "explain_query")]
     [Description("Run EXPLAIN QUERY PLAN for a SELECT statement and return the execution plan.")]
     public static string ExplainQuery(
@@ -76,6 +115,12 @@ public sealed class SqliteTools
             return new { planCount = plan.Count, plan };
         });
 
+    /// <summary>
+    /// Return basic statistics for a table: total row count and, for the first up‑to‑20 columns, the number of NULL values per column.
+    /// </summary>
+    /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
+    /// <param name="table">Name of the table or view to analyse.</param>
+    /// <returns>A JSON string containing the table name, row count, and column statistics.</returns>
     [McpServerTool(Name = "table_stats")]
     [Description("Return basic statistics for a table: total row count and, for the first up‑to‑20 columns, the number of NULL values per column.")]
     public static string TableStats(
