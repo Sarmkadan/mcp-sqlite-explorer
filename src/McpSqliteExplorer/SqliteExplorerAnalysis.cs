@@ -30,6 +30,7 @@ public sealed partial class SqliteExplorer
     /// </summary>
     public IReadOnlyList<QueryPlanNode> ExplainQueryPlan(string sql)
     {
+        ArgumentException.ThrowIfNullOrEmpty(sql);
         GuardSelectOnly(sql);
 
         return ExecuteWithRetryAsync(() =>
@@ -341,6 +342,7 @@ public sealed partial class SqliteExplorer
     /// </summary>
     public IReadOnlyList<IndexSuggestion> SuggestIndexes(string sql)
     {
+        ArgumentException.ThrowIfNullOrEmpty(sql);
         var plan = ExplainQueryPlan(sql);
         var suggestions = new List<IndexSuggestion>();
         var tableNames = ListTables()
