@@ -18,6 +18,7 @@ public sealed class SqlGuardTests
     [InlineData("/* block */ SELECT 1")]
     public void GuardSelectOnly_AllowsReadStatements(string sql)
     {
+        ArgumentException.ThrowIfNullOrEmpty(sql);
         // Should not throw.
         SqliteExplorer.GuardSelectOnly(sql);
     }
@@ -38,6 +39,7 @@ public sealed class SqlGuardTests
     [InlineData("ATTACH DATABASE 'x.db' AS x")]
     public void GuardSelectOnly_RejectsWriteStatements(string sql)
     {
+        ArgumentException.ThrowIfNullOrEmpty(sql);
         Assert.Throws<ArgumentException>(() => SqliteExplorer.GuardSelectOnly(sql));
     }
 
@@ -50,6 +52,7 @@ public sealed class SqlGuardTests
     [InlineData("SELECT 1; SELECT 2")]
     public void GuardSelectOnly_RejectsMultipleStatements(string sql)
     {
+        ArgumentException.ThrowIfNullOrEmpty(sql);
         Assert.Throws<ArgumentException>(() => SqliteExplorer.GuardSelectOnly(sql));
     }
 
@@ -72,6 +75,7 @@ public sealed class SqlGuardTests
     [InlineData("-- only a comment")]
     public void GuardSelectOnly_RejectsEmpty(string sql)
     {
+        ArgumentException.ThrowIfNullOrEmpty(sql);
         Assert.Throws<ArgumentException>(() => SqliteExplorer.GuardSelectOnly(sql));
     }
 
