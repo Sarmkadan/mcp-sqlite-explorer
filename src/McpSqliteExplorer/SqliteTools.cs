@@ -106,7 +106,12 @@ public sealed class SqliteTools
         [Description("A single SELECT or WITH ... SELECT statement. No INSERT/UPDATE/DELETE/DDL and no multiple statements.")] string sql,
         [Description("Maximum number of rows to return (1-1000, default 100).")] int limit = SqliteExplorer.DefaultRowCap,
         [Description("Maximum execution time in seconds (default 15). Set to 0 to disable timeout.")] int timeBudgetSeconds = 15) =>
-        Guarded(() => ToPayload(explorer.RunSelect(sql, limit, timeBudgetSeconds)));
+        Guarded(() =>
+        {
+            ArgumentNullException.ThrowIfNull(explorer);
+            ArgumentException.ThrowIfNullOrEmpty(sql);
+            return ToPayload(explorer.RunSelect(sql, limit, timeBudgetSeconds));
+        });
 
     /// <summary>
     /// Run EXPLAIN QUERY PLAN for a SELECT statement and return the execution plan.
@@ -121,6 +126,8 @@ public sealed class SqliteTools
         [Description("A single SELECT statement to analyze. Only SELECT statements are permitted.")] string sql) =>
         Guarded(() =>
         {
+            ArgumentNullException.ThrowIfNull(explorer);
+            ArgumentException.ThrowIfNullOrEmpty(sql);
             var plan = explorer.ExplainQueryPlan(sql);
             return new { planCount = plan.Count, plan };
         });
