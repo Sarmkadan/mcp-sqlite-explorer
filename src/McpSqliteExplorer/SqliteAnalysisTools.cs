@@ -53,63 +53,70 @@ public sealed class SqliteAnalysisTools
     [Description("List the foreign keys declared on a table: referencing column, referenced table/column, and ON UPDATE / ON DELETE actions.")]
     public static string ListForeignKeys(
         SqliteExplorer explorer,
-        [Description("Name of the table whose foreign keys to list.")] string table) =>
-        Guarded(() =>
+        [Description("Name of the table whose foreign keys to list.")] string table)
+    {
+        ValidateExplorer(explorer);
+        ValidateString(table, nameof(table));
+        return Guarded(() =>
         {
-            ValidateExplorer(explorer);
-            ValidateString(table, nameof(table));
-
             var foreignKeys = explorer.ListForeignKeys(table);
             return new { table, count = foreignKeys.Count, foreignKeys };
         });
+    }
 
     [McpServerTool(Name = "foreign_key_graph")]
     [Description("Return every foreign-key relationship in the database as a flat edge list - the full relationship graph in one call.")]
-    public static string ForeignKeyGraph(SqliteExplorer explorer) =>
-        Guarded(() =>
+    public static string ForeignKeyGraph(SqliteExplorer explorer)
+    {
+        ValidateExplorer(explorer);
+        return Guarded(() =>
         {
-            ValidateExplorer(explorer);
             var edges = explorer.GetForeignKeyGraph();
             return new { count = edges.Count, edges };
         });
+    }
 
     [McpServerTool(Name = "foreign_key_chain")]
     [Description("Walk the foreign-key graph outward from a table, in both directions (referenced and referencing), up to a maximum depth. Answers 'what is connected to this table?'.")]
     public static string ForeignKeyChain(
         SqliteExplorer explorer,
         [Description("Table to start from.")] string table,
-        [Description("Maximum number of hops to follow (default 3).")] int maxDepth = 3) =>
-        Guarded(() =>
+        [Description("Maximum number of hops to follow (default 3).")] int maxDepth = 3)
+    {
+        ValidateExplorer(explorer);
+        ValidateString(table, nameof(table));
+        return Guarded(() =>
         {
-            ValidateExplorer(explorer);
-            ValidateString(table, nameof(table));
-
             var hops = explorer.ExploreForeignKeyChain(table, maxDepth);
             return new { table, maxDepth, count = hops.Count, hops };
         });
+    }
 
     [McpServerTool(Name = "generate_erd")]
     [Description("Render the whole schema as a Mermaid erDiagram: every table with typed columns (PK/FK markers) plus one relationship line per foreign key. Paste the output into any Mermaid renderer.")]
-    public static string GenerateErd(SqliteExplorer explorer) =>
-        Guarded(() =>
+    public static string GenerateErd(SqliteExplorer explorer)
+    {
+        ValidateExplorer(explorer);
+        return Guarded(() =>
         {
-            ValidateExplorer(explorer);
             return new { format = "mermaid", diagram = explorer.GenerateErd() };
         });
+    }
 
     [McpServerTool(Name = "explain_query_plan")]
     [Description("Run EXPLAIN QUERY PLAN for a read‑only SELECT and return SQLite's plan tree (scans, index usage, join order) without executing the query.")]
     public static string ExplainQueryPlan(
         SqliteExplorer explorer,
-        [Description("A single SELECT or WITH ... SELECT statement to explain.")] string sql) =>
-        Guarded(() =>
+        [Description("A single SELECT or WITH ... SELECT statement to explain.")] string sql)
+    {
+        ValidateExplorer(explorer);
+        ValidateString(sql, nameof(sql));
+        return Guarded(() =>
         {
-            ValidateExplorer(explorer);
-            ValidateString(sql, nameof(sql));
-
             var plan = explorer.ExplainQueryPlan(sql);
             return new { sql, nodes = plan };
         });
+    }
 
     [McpServerTool(Name = "profile_table")]
     [Description("Profile every column of a table: row count, null count and rate, distinct cardinality, min/max, and the most frequent values, computed in a single pass over the data. Tables larger than sampleRows are profiled from a leading sample instead of a full scan, with the result flagged as sampled.")]
@@ -126,13 +133,15 @@ public sealed class SqliteAnalysisTools
 
     [McpServerTool(Name = "table_stats")]
     [Description("Per‑table size overview: row count, column count, index count and on‑disk size estimate (when the SQLite build exposes dbstat).")]
-    public static string TableStatsOverview(SqliteExplorer explorer) =>
-        Guarded(() =>
+    public static string TableStatsOverview(SqliteExplorer explorer)
+    {
+        ValidateExplorer(explorer);
+        return Guarded(() =>
         {
-            ValidateExplorer(explorer);
             var stats = explorer.GetTableStats();
             return new { count = stats.Count, tables = stats };
         });
+    }
 
     [McpServerTool(Name = "suggest_indexes")]
     [Description("Analyse a SELECT's query plan for full table scans and suggest candidate CREATE INDEX statements for the un‑indexed columns the query touches. Suggestions are verified by running EXPLAIN QUERY PLAN on a scratch copy of the schema with the proposed index applied.")]
