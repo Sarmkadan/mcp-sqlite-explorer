@@ -26,6 +26,7 @@ public sealed class SqliteTools
     public static string ListTables(SqliteExplorer explorer) =>
         Guarded(() =>
         {
+            ArgumentNullException.ThrowIfNull(explorer);
             var tables = explorer.ListTables();
             return new { count = tables.Count, tables };
         });
@@ -43,6 +44,8 @@ public sealed class SqliteTools
         [Description("Name of the table or view to describe.")] string table) =>
         Guarded(() =>
         {
+            ArgumentNullException.ThrowIfNull(explorer);
+            ArgumentException.ThrowIfNullOrEmpty(table);
             var columns = explorer.DescribeTable(table);
             return new { table, columnCount = columns.Count, columns };
         });
@@ -60,6 +63,8 @@ public sealed class SqliteTools
         [Description("Name of the table or view whose indexes should be listed.")] string table) =>
         Guarded(() =>
         {
+            ArgumentNullException.ThrowIfNull(explorer);
+            ArgumentException.ThrowIfNullOrEmpty(table);
             var indexes = explorer.ListIndexes(table);
             return new { table, indexCount = indexes.Count, indexes };
         });
@@ -79,7 +84,12 @@ public sealed class SqliteTools
         [Description("Name of the table or view to sample.")] string table,
         [Description("Maximum number of rows to return (1-1000, default 100).")] int limit = SqliteExplorer.DefaultRowCap,
         [Description("Maximum execution time in seconds (default 15). Set to 0 to disable timeout.")] int timeBudgetSeconds = 15) =>
-        Guarded(() => ToPayload(explorer.SampleRows(table, limit, timeBudgetSeconds)));
+        Guarded(() =>
+        {
+            ArgumentNullException.ThrowIfNull(explorer);
+            ArgumentException.ThrowIfNullOrEmpty(table);
+            return ToPayload(explorer.SampleRows(table, limit, timeBudgetSeconds));
+        });
 
     /// <summary>
     /// Run a single read-only SELECT (or WITH ... SELECT) query and return the rows, capped for safety. Write statements are rejected.
@@ -130,7 +140,6 @@ public sealed class SqliteTools
         {
             ArgumentNullException.ThrowIfNull(explorer);
             ArgumentException.ThrowIfNullOrEmpty(table);
-
             var profile = explorer.TableStats(table);
             return new
             {
