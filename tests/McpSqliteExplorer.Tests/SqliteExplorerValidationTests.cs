@@ -4,8 +4,19 @@ using Xunit;
 
 namespace McpSqliteExplorer.Tests;
 
+/// <summary>
+/// Contains unit tests for validation functionality in the SqliteExplorer and related classes.
+/// Tests cover validation of SqliteExplorer instances, TableInfo, ColumnInfo, QueryResult objects,
+/// identifier validation, and SQL statement validation.
+/// </summary>
 public class SqliteExplorerValidationTests
 {
+    /// <summary>
+    /// Tests that Validate() returns an empty list when called on a valid SqliteExplorer instance.
+    /// </summary>
+    /// <summary>
+    /// Tests that Validate() returns an empty list when called on a valid SqliteExplorer instance.
+    /// </summary>
     [Fact]
     public void SqliteExplorer_Validate_WithValidInstance_ReturnsEmptyList()
     {
@@ -22,6 +33,9 @@ public class SqliteExplorerValidationTests
         Assert.Empty(result);
     }
 
+    /// <summary>
+    /// Tests that Validate() throws ArgumentNullException when called on a null SqliteExplorer instance.
+    /// </summary>
     [Fact]
     public void SqliteExplorer_Validate_WithNullInstance_ThrowsArgumentNullException()
     {
@@ -32,6 +46,9 @@ public class SqliteExplorerValidationTests
         Assert.Throws<ArgumentNullException>(() => explorer!.Validate());
     }
 
+    /// <summary>
+    /// Tests that IsValid() returns true when called on a valid SqliteExplorer instance.
+    /// </summary>
     [Fact]
     public void SqliteExplorer_IsValid_WithValidInstance_ReturnsTrue()
     {
