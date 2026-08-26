@@ -98,3 +98,28 @@ jsonTests.ToJson_WithNullValue_ThrowsArgumentNullException();
 jsonTests.FromJson_WithNullJson_ThrowsArgumentNullException();
 jsonTests.TryFromJson_WithInvalidJson_ReturnsFalseAndNull();
 ```
+
+
+## SqliteExplorerValidationTests
+
+The SqliteExplorerValidationTests class verifies the validation helpers that `SqliteExplorerValidation` exposes as extension methods on `SqliteExplorer` and `TableInfo`: `Validate` collects every problem into a list of messages, `IsValid` answers the same question as a single bool, and `EnsureValid` runs the checks and throws when handed a null instance. The tests cover valid explorers and tables, tables with null, empty or whitespace-only names, and `Type` values that are empty, unknown, mixed case, or one of the supported `table` / `view` kinds.
+
+Example usage demonstrating the validation surface covered by these tests:
+```csharp
+using McpSqliteExplorer;
+
+var explorer = new SqliteExplorer("path/to/database.db");
+
+// Collect every validation problem found on the explorer instance
+var explorerErrors = explorer.Validate();
+
+// Or just ask for a boolean verdict
+bool isValid = explorer.IsValid();
+
+// Run the same checks and fail fast when something is wrong
+explorer.EnsureValid();
+
+// Validate a single table descriptor, e.g. one returned by the catalog
+var table = explorer.ListTables()[0];
+var tableErrors = table.Validate();
+```
