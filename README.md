@@ -149,3 +149,35 @@ var schemaSummaryJson = explorer.GetSchemaSummary();
 // Get a random sample of 5 rows from the 'users' table
 var sampleJson = explorer.SampleTable("users", 5);
 ```
+
+## SqliteToolsTests
+
+The SqliteToolsTests class verifies the static methods of the SqliteTools class, which provide JSON-based inspection capabilities for SQLite databases, including listing tables, describing tables, listing indexes, sampling rows, running select queries, explaining queries, and getting table statistics.
+
+Example usage:
+```csharp
+using McpSqliteExplorer;
+
+var explorer = new SqliteExplorer("path/to/database.db");
+
+// List all tables and views in the database
+var tablesJson = SqliteTools.ListTables(explorer);
+
+// Get the schema for a specific table
+var tableJson = SqliteTools.DescribeTable(explorer, "users");
+
+// Get indexes for a table
+var indexesJson = SqliteTools.ListIndexes(explorer, "users");
+
+// Sample 5 rows from a table
+var sampleJson = SqliteTools.SampleRows(explorer, "users", 5);
+
+// Run a read-only SELECT query
+var selectJson = SqliteTools.RunSelect(explorer, "SELECT * FROM users WHERE age > 18");
+
+// Get the query execution plan
+var explainJson = SqliteTools.ExplainQuery(explorer, "SELECT * FROM users WHERE age > 18");
+
+// Get statistics for a table
+var statsJson = SqliteTools.TableStats(explorer, "users");
+```
