@@ -1,4 +1,3 @@
-
 ## SqliteToolsExtensionsTests
 
 The SqliteToolsExtensionsTests class contains unit tests for the SqliteToolsExtensions class. It verifies the correctness of various extension methods for SqliteTools, including GetTableCount, GetRowCount, GetAllColumns, and GetSchemaSummary.
@@ -122,4 +121,31 @@ explorer.EnsureValid();
 // Validate a single table descriptor, e.g. one returned by the catalog
 var table = explorer.ListTables()[0];
 var tableErrors = table.Validate();
+```
+
+## SqliteToolsExtensions
+
+The SqliteToolsExtensions class provides extension methods for SqliteExplorer to perform common database inspection tasks.
+It includes methods to get table and row counts, column information, schema summaries, and to sample table data.
+
+Example usage:
+```csharp
+using McpSqliteExplorer;
+
+var explorer = new SqliteExplorer("/tmp/test.db");
+
+// Get the count of tables and views in the database
+var tableCountJson = explorer.GetTableCount();
+
+// Get the row count of a specific table
+var rowCountJson = explorer.GetRowCount("users");
+
+// Get all columns across all tables in the database
+var allColumnsJson = explorer.GetAllColumns();
+
+// Get a summary of the database schema
+var schemaSummaryJson = explorer.GetSchemaSummary();
+
+// Get a random sample of 5 rows from the 'users' table
+var sampleJson = explorer.SampleTable("users", 5);
 ```
