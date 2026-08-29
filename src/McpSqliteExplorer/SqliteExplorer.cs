@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace McpSqliteExplorer;
 
@@ -21,7 +24,32 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
     private readonly string _connectionString;
     private readonly string _validatedDatabasePath;
     private readonly ISqliteCatalog _catalog;
+    private readonly ILogger _logger;
     private bool _disposed;
+
+    private static readonly Action<ILogger, string, bool, Exception?> DatabaseOpenedLog =
+        LoggerMessage.Define<string, bool>(
+            LogLevel.Information,
+            new EventId(1, "DatabaseOpened"),
+            "Database opened at {DatabasePath} in read-only mode: {ReadOnly}");
+
+    private static readonly Action<ILogger, string, long, int, bool, Exception?> QueryExecutedLog =
+        LoggerMessage.Define<string, long, int, bool>(
+            LogLevel.Debug,
+            new EventId(2, "QueryExecuted"),
+            "Query executed: {StatementKind}, elapsed {ElapsedMilliseconds} ms, rows {RowCount}, truncated {Truncated}");
+
+    private static readonly Action<ILogger, string, Exception?> QueryRejectedLog =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(3, "QueryRejected"),
+            "Query rejected by validation: {Reason}");
+
+    private static readonly Action<ILogger, int, int, Exception?> QueryTimeoutLog =
+        LoggerMessage.Define<int, int>(
+            LogLevel.Warning,
+            new EventId(4, "QueryTimeout"),
+            "Query timeout hit after {TimeBudgetSeconds} seconds with {RowCount} rows read");
 
     /// <summary>
     /// The base directory that database paths must be contained within for security.
@@ -227,9 +255,21 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
     }
 
     public SqliteExplorer(string databasePath)
+        : this(databasePath, null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a read-only SQLite explorer with optional structured logging.
+    /// </summary>
+    /// <param name="databasePath">Path to the SQLite database.</param>
+    /// <param name="logger">Logger used for database and query events, or null to disable logging.</param>
+    public SqliteExplorer(string databasePath, ILogger? logger)
     {
         if (string.IsNullOrWhiteSpace(databasePath))
             throw new ArgumentException("Database path must not be empty.", nameof(databasePath));
+
+        _logger = logger ?? NullLogger.Instance;
 
         // Validate the database path to prevent path traversal attacks
         _validatedDatabasePath = ValidateDatabasePath(databasePath);
@@ -307,6 +347,7 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
         PRAGMA trusted_schema = OFF;
         """;
         pragma.ExecuteNonQuery();
+        DatabaseOpenedLog(_logger, _validatedDatabasePath, true, null);
 
         return connection;
     }
@@ -426,7 +467,16 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
     /// <returns>A <see cref="QueryResult"/> containing the query results and metadata.</returns>
     public QueryResult RunSelect(string sql, int limit = DefaultRowCap, int timeBudgetSeconds = 15)
     {
-        GuardSelectOnly(sql);
+        try
+        {
+            GuardSelectOnly(sql);
+        }
+        catch (ArgumentException ex)
+        {
+            QueryRejectedLog(_logger, ex.Message, ex);
+            throw;
+        }
+
         var cap = ClampLimit(limit);
         return ExecuteReadOnly(sql, cap, timeBudgetSeconds);
     }
@@ -503,6 +553,8 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
 
     private QueryResult ExecuteReadOnlyCore(string sql, int cap, int timeBudgetSeconds = 15)
     {
+        var stopwatch = Stopwatch.StartNew();
+        var statementKind = GetStatementKind(sql);
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -599,7 +651,9 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
 
         if (timedOut)
         {
-            return new QueryResult(
+            stopwatch.Stop();
+            QueryTimeoutLog(_logger, timeBudgetSeconds, rowsBeforeTimeout, null);
+            var result = new QueryResult(
                 Columns: columns,
                 Rows: rows,
                 AppliedRowCap: cap,
@@ -608,15 +662,27 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
                 TimeoutMessage: timeoutMessage ?? $"Query exceeded time budget of {timeBudgetSeconds} seconds.",
                 RowsBeforeTimeout: rowsBeforeTimeout
             );
+            QueryExecutedLog(_logger, statementKind, stopwatch.ElapsedMilliseconds, result.Rows.Count, result.Truncated, null);
+            return result;
         }
 
-        return new QueryResult(
+        stopwatch.Stop();
+        var completedResult = new QueryResult(
             Columns: columns,
             Rows: rows,
             AppliedRowCap: cap,
             Truncated: truncated,
             RowsBeforeTimeout: 0
         );
+        QueryExecutedLog(_logger, statementKind, stopwatch.ElapsedMilliseconds, completedResult.Rows.Count, completedResult.Truncated, null);
+        return completedResult;
+    }
+
+    private static string GetStatementKind(string sql)
+    {
+        return StripComments(sql).TrimStart()
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault()?.ToUpperInvariant() ?? "UNKNOWN";
     }
 
     private string RequireExistingTable(string table)
