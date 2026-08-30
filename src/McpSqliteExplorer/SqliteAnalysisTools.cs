@@ -39,11 +39,10 @@ public sealed class SqliteAnalysisTools
         SqliteExplorer explorer,
         [Description("Name of the table whose indexes to list.")] string table)
     {
-        ValidateExplorer(explorer);
-        ValidateString(table, nameof(table));
-
         return Guarded(() =>
         {
+            ValidateExplorer(explorer);
+            ValidateString(table, nameof(table));
             var indexes = explorer.ListIndexes(table);
             return new { table, count = indexes.Count, indexes };
         });
@@ -55,10 +54,10 @@ public sealed class SqliteAnalysisTools
         SqliteExplorer explorer,
         [Description("Name of the table whose foreign keys to list.")] string table)
     {
-        ValidateExplorer(explorer);
-        ValidateString(table, nameof(table));
         return Guarded(() =>
         {
+            ValidateExplorer(explorer);
+            ValidateString(table, nameof(table));
             var foreignKeys = explorer.ListForeignKeys(table);
             return new { table, count = foreignKeys.Count, foreignKeys };
         });
@@ -68,9 +67,9 @@ public sealed class SqliteAnalysisTools
     [Description("Return every foreign-key relationship in the database as a flat edge list - the full relationship graph in one call.")]
     public static string ForeignKeyGraph(SqliteExplorer explorer)
     {
-        ValidateExplorer(explorer);
         return Guarded(() =>
         {
+            ValidateExplorer(explorer);
             var edges = explorer.GetForeignKeyGraph();
             return new { count = edges.Count, edges };
         });
@@ -83,10 +82,10 @@ public sealed class SqliteAnalysisTools
         [Description("Table to start from.")] string table,
         [Description("Maximum number of hops to follow (default 3).")] int maxDepth = 3)
     {
-        ValidateExplorer(explorer);
-        ValidateString(table, nameof(table));
         return Guarded(() =>
         {
+            ValidateExplorer(explorer);
+            ValidateString(table, nameof(table));
             var hops = explorer.ExploreForeignKeyChain(table, maxDepth);
             return new { table, maxDepth, count = hops.Count, hops };
         });
@@ -96,9 +95,9 @@ public sealed class SqliteAnalysisTools
     [Description("Render the whole schema as a Mermaid erDiagram: every table with typed columns (PK/FK markers) plus one relationship line per foreign key. Paste the output into any Mermaid renderer.")]
     public static string GenerateErd(SqliteExplorer explorer)
     {
-        ValidateExplorer(explorer);
         return Guarded(() =>
         {
+            ValidateExplorer(explorer);
             return new { format = "mermaid", diagram = explorer.GenerateErd() };
         });
     }
@@ -109,10 +108,10 @@ public sealed class SqliteAnalysisTools
         SqliteExplorer explorer,
         [Description("A single SELECT or WITH ... SELECT statement to explain.")] string sql)
     {
-        ValidateExplorer(explorer);
-        ValidateString(sql, nameof(sql));
         return Guarded(() =>
         {
+            ValidateExplorer(explorer);
+            ValidateString(sql, nameof(sql));
             var plan = explorer.ExplainQueryPlan(sql);
             return new { sql, nodes = plan };
         });
@@ -125,19 +124,21 @@ public sealed class SqliteAnalysisTools
         [Description("Name of the table to profile.")] string table,
         [Description("Row budget before switching to a sample instead of a full scan (default 100000).")] long sampleRows = SqliteExplorer.DefaultProfileSampleRows)
     {
-        ValidateExplorer(explorer);
-        ValidateString(table, nameof(table));
-
-        return Guarded(() => explorer.ProfileTable(table, sampleRows));
+        return Guarded(() =>
+        {
+            ValidateExplorer(explorer);
+            ValidateString(table, nameof(table));
+            return explorer.ProfileTable(table, sampleRows);
+        });
     }
 
     [McpServerTool(Name = "table_stats")]
     [Description("Per‑table size overview: row count, column count, index count and on‑disk size estimate (when the SQLite build exposes dbstat).")]
     public static string TableStatsOverview(SqliteExplorer explorer)
     {
-        ValidateExplorer(explorer);
         return Guarded(() =>
         {
+            ValidateExplorer(explorer);
             var stats = explorer.GetTableStats();
             return new { count = stats.Count, tables = stats };
         });
