@@ -39,6 +39,61 @@ public sealed class SqliteExplorerValidationException : ArgumentException
 /// </summary>
 public static class SqliteExplorerValidation
 {
+    // Maximum number of characters accepted in a SQLite identifier.
+    private const int MaxIdentifierLength = 255;
+
+    // Count representing an empty validation-problem or result-column collection.
+    private const int EmptyCount = 0;
+
+    // Lowest row-cap value accepted for a query result.
+    private const int MinimumAppliedRowCap = 1;
+
+    // Maximum number of statement-separating semicolons allowed in a SQL query.
+    private const int MaxStatementSeparators = 0;
+
+    // SQL keywords reused by metadata and validation checks.
+    private const string AlterKeyword = "ALTER";
+    private const string AttachKeyword = "ATTACH";
+    private const string CreateKeyword = "CREATE";
+    private const string DeleteKeyword = "DELETE";
+    private const string DetachKeyword = "DETACH";
+    private const string DropKeyword = "DROP";
+    private const string InsertKeyword = "INSERT";
+    private const string PragmaKeyword = "PRAGMA";
+    private const string ReplaceKeyword = "REPLACE";
+    private const string SelectKeyword = "SELECT";
+    private const string TableKeyword = "TABLE";
+    private const string TruncateKeyword = "TRUNCATE";
+    private const string UnionKeyword = "UNION";
+    private const string UpdateKeyword = "UPDATE";
+    private const string VacuumKeyword = "VACUUM";
+    private const string ViewKeyword = "VIEW";
+
+    // SQL keywords that identify write operations in otherwise read-only SQL.
+    private static readonly string[] WriteKeywords =
+    {
+        InsertKeyword, UpdateKeyword, DeleteKeyword, ReplaceKeyword, UnionKeyword
+    };
+
+    // SQL keywords that identify schema-changing or otherwise dangerous statements.
+    private static readonly string[] DangerousKeywords =
+    {
+        DropKeyword, AlterKeyword, TruncateKeyword, CreateKeyword, AttachKeyword, DetachKeyword,
+        VacuumKeyword, PragmaKeyword
+    };
+
+    // Non-keyword substrings treated as SQL-injection markers in identifiers.
+    private const string ExecuteMarker = "EXEC";
+    private const string LineCommentMarker = "--";
+    private const string StatementSeparatorMarker = ";";
+    private const string BlockCommentStartMarker = "/*";
+    private const string BlockCommentEndMarker = "*/";
+    private const string OrExpressionMarker = " OR ";
+    private const string AndExpressionMarker = " AND ";
+    private const string ExtendedProcedureMarker = "XP_";
+    private const string WaitForMarker = "WAITFOR";
+    private const string ShutdownMarker = "SHUTDOWN";
+
     /// <summary>
     /// Validates the supplied <see cref="SqliteExplorer"/> instance and returns a list of human-readable problems.
     /// </summary>
@@ -101,7 +156,7 @@ public static class SqliteExplorerValidation
 
         if (string.IsNullOrWhiteSpace(value.Type))
             problems.Add("TableInfo.Type must not be null or whitespace");
-        else if (value.Type.ToUpperInvariant() is not ("TABLE" or "VIEW"))
+        else if (value.Type.ToUpperInvariant() is not (TableKeyword or ViewKeyword))
             problems.Add("TableInfo.Type must be either 'table' or 'view'");
 
         return problems;
@@ -113,7 +168,7 @@ public static class SqliteExplorerValidation
     /// <param name="value">The table info to check.</param>
     /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
-    public static bool IsValid(this TableInfo value) => value.Validate().Count == 0;
+    public static bool IsValid(this TableInfo value) => value.Validate().Count == EmptyCount;
 
     /// <summary>
     /// Ensures that the supplied <see cref="TableInfo"/> record is valid.
@@ -129,7 +184,7 @@ public static class SqliteExplorerValidation
         ArgumentNullException.ThrowIfNull(value);
 
         var problems = value.Validate();
-        if (problems.Count > 0)
+        if (problems.Count > EmptyCount)
         {
             var message = $"TableInfo instance is invalid: {string.Join("; ", problems)}";
             throw new ArgumentException(message, nameof(value));
@@ -170,7 +225,7 @@ public static class SqliteExplorerValidation
     /// <param name="value">The column info to check.</param>
     /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
-    public static bool IsValid(this ColumnInfo value) => value.Validate().Count == 0;
+    public static bool IsValid(this ColumnInfo value) => value.Validate().Count == EmptyCount;
 
     /// <summary>
     /// Ensures that the supplied <see cref="ColumnInfo"/> record is valid.
@@ -186,7 +241,7 @@ public static class SqliteExplorerValidation
         ArgumentNullException.ThrowIfNull(value);
 
         var problems = value.Validate();
-        if (problems.Count > 0)
+        if (problems.Count > EmptyCount)
         {
             var message = $"ColumnInfo instance is invalid: {string.Join("; ", problems)}";
             throw new ArgumentException(message, nameof(value));
@@ -210,7 +265,7 @@ public static class SqliteExplorerValidation
 
         if (value.Columns is null)
             problems.Add("QueryResult.Columns must not be null");
-        else if (value.Columns.Count == 0)
+        else if (value.Columns.Count == EmptyCount)
             problems.Add("QueryResult.Columns must contain at least one column");
         else
         {
@@ -223,7 +278,7 @@ public static class SqliteExplorerValidation
 
         if (value.Rows is null)
             problems.Add("QueryResult.Rows must not be null");
-        else if (value.Columns is not null && value.Columns.Count > 0)
+        else if (value.Columns is not null && value.Columns.Count > EmptyCount)
         {
             // Validate each row has the correct number of columns
             foreach (var row in value.Rows)
@@ -240,7 +295,7 @@ public static class SqliteExplorerValidation
             }
         }
 
-        if (value.AppliedRowCap <= 0)
+        if (value.AppliedRowCap < MinimumAppliedRowCap)
             problems.Add("QueryResult.AppliedRowCap must be a positive integer");
         else if (value.AppliedRowCap > SqliteExplorer.MaxRowCap)
             problems.Add($"QueryResult.AppliedRowCap must not exceed {SqliteExplorer.MaxRowCap}");
@@ -254,7 +309,7 @@ public static class SqliteExplorerValidation
     /// <param name="value">The query result to check.</param>
     /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
-    public static bool IsValid(this QueryResult value) => value.Validate().Count == 0;
+    public static bool IsValid(this QueryResult value) => value.Validate().Count == EmptyCount;
 
     /// <summary>
     /// Ensures that the supplied <see cref="QueryResult"/> record is valid.
@@ -270,7 +325,7 @@ public static class SqliteExplorerValidation
         ArgumentNullException.ThrowIfNull(value);
 
         var problems = value.Validate();
-        if (problems.Count > 0)
+        if (problems.Count > EmptyCount)
         {
             var message = $"QueryResult instance is invalid: {string.Join("; ", problems)}";
             throw new ArgumentException(message, nameof(value));
@@ -303,10 +358,9 @@ public static class SqliteExplorerValidation
         }
 
         // Check maximum length (reasonable limit for identifiers)
-        const int maxIdentifierLength = 255;
-        if (trimmedIdentifier.Length > maxIdentifierLength)
+        if (trimmedIdentifier.Length > MaxIdentifierLength)
         {
-            problems.Add($"Identifier exceeds maximum length of {maxIdentifierLength} characters");
+            problems.Add($"Identifier exceeds maximum length of {MaxIdentifierLength} characters");
         }
 
         // Check for SQL injection patterns
@@ -367,7 +421,7 @@ public static class SqliteExplorerValidation
         }
 
         var problems = ValidateIdentifier(identifier, allowReservedKeywords);
-        if (problems.Count > 0)
+        if (problems.Count > EmptyCount)
         {
             var message = $"Identifier is invalid: {string.Join("; ", problems)}";
             throw new ArgumentException(message, nameof(identifier));
@@ -444,7 +498,7 @@ public static class SqliteExplorerValidation
         ArgumentException.ThrowIfNullOrEmpty(sql, nameof(sql));
 
         var problems = ValidateSql(sql);
-        if (problems.Count > 0)
+        if (problems.Count > EmptyCount)
         {
             var message = $"SQL statement is invalid: {string.Join("; ", problems)}";
             throw new ArgumentException(message, nameof(sql));
@@ -459,26 +513,26 @@ public static class SqliteExplorerValidation
         var upper = identifier.ToUpperInvariant();
 
         // Check for common SQL injection patterns
-        return (upper.Contains("SELECT") && !upper.StartsWith("SELECT"))
-            || upper.Contains("INSERT")
-            || upper.Contains("UPDATE")
-            || upper.Contains("DELETE")
-            || upper.Contains("DROP")
-            || upper.Contains("ALTER")
-            || upper.Contains("CREATE")
-            || upper.Contains("TRUNCATE")
-            || upper.Contains("REPLACE")
-            || upper.Contains("EXEC")
-            || upper.Contains("--")
-            || upper.Contains(";")
-            || upper.Contains("/*")
-            || upper.Contains("*/")
-            || upper.Contains("UNION")
-            || upper.Contains(" OR ")
-            || upper.Contains(" AND ")
-            || upper.Contains("XP_")
-            || upper.Contains("WAITFOR")
-            || upper.Contains("SHUTDOWN");
+        return (upper.Contains(SelectKeyword) && !upper.StartsWith(SelectKeyword))
+            || upper.Contains(InsertKeyword)
+            || upper.Contains(UpdateKeyword)
+            || upper.Contains(DeleteKeyword)
+            || upper.Contains(DropKeyword)
+            || upper.Contains(AlterKeyword)
+            || upper.Contains(CreateKeyword)
+            || upper.Contains(TruncateKeyword)
+            || upper.Contains(ReplaceKeyword)
+            || upper.Contains(ExecuteMarker)
+            || upper.Contains(LineCommentMarker)
+            || upper.Contains(StatementSeparatorMarker)
+            || upper.Contains(BlockCommentStartMarker)
+            || upper.Contains(BlockCommentEndMarker)
+            || upper.Contains(UnionKeyword)
+            || upper.Contains(OrExpressionMarker)
+            || upper.Contains(AndExpressionMarker)
+            || upper.Contains(ExtendedProcedureMarker)
+            || upper.Contains(WaitForMarker)
+            || upper.Contains(ShutdownMarker);
     }
 
     /// <summary>
@@ -539,7 +593,7 @@ public static class SqliteExplorerValidation
             else if (c == ';' && !inString)
             {
                 semicolonCount++;
-                if (semicolonCount > 0)
+                if (semicolonCount > MaxStatementSeparators)
                 {
                     return true;
                 }
@@ -556,9 +610,7 @@ public static class SqliteExplorerValidation
     {
         var cleanSql = RemoveComments(sql);
         var upper = cleanSql.ToUpperInvariant();
-        var writeKeywords = new[] { "INSERT", "UPDATE", "DELETE", "REPLACE", "UNION" };
-
-        return writeKeywords.Any(keyword => upper.Contains(keyword));
+        return WriteKeywords.Any(keyword => upper.Contains(keyword));
     }
 
     /// <summary>
@@ -568,9 +620,7 @@ public static class SqliteExplorerValidation
     {
         var cleanSql = RemoveComments(sql);
         var upper = cleanSql.ToUpperInvariant();
-        var dangerousKeywords = new[] { "DROP", "ALTER", "TRUNCATE", "CREATE", "ATTACH", "DETACH", "VACUUM", "PRAGMA" };
-
-        return dangerousKeywords.Any(keyword => upper.Contains(keyword));
+        return DangerousKeywords.Any(keyword => upper.Contains(keyword));
     }
 
     /// <summary>
@@ -590,20 +640,20 @@ public static class SqliteExplorerValidation
         // SQLite 3 reserved keywords (keywords that cannot be used as identifiers without quoting)
         var reservedKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "ABORT", "ACTION", "ADD", "AFTER", "ALL", "ALTER", "ANALYZE", "AND", "AS", "ASC",
-            "ATTACH", "AUTOINCREMENT", "BEFORE", "BEGIN", "BETWEEN", "BY", "CASCADE", "CASE",
-            "CAST", "CHECK", "COLLATE", "COLUMN", "COMMIT", "CONFLICT", "CONSTRAINT", "CREATE",
+            "ABORT", "ACTION", "ADD", "AFTER", "ALL", AlterKeyword, "ANALYZE", "AND", "AS", "ASC",
+            AttachKeyword, "AUTOINCREMENT", "BEFORE", "BEGIN", "BETWEEN", "BY", "CASCADE", "CASE",
+            "CAST", "CHECK", "COLLATE", "COLUMN", "COMMIT", "CONFLICT", "CONSTRAINT", CreateKeyword,
             "CROSS", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "DATABASE", "DEFAULT",
-            "DEFERRABLE", "DEFERRED", "DELETE", "DESC", "DETACH", "DISTINCT", "DROP", "EACH",
+            "DEFERRABLE", "DEFERRED", DeleteKeyword, "DESC", DetachKeyword, "DISTINCT", DropKeyword, "EACH",
             "ELSE", "END", "ESCAPE", "EXCEPT", "EXCLUSIVE", "EXISTS", "EXPLAIN", "FAIL", "FOR",
             "FOREIGN", "FROM", "FULL", "GLOB", "GROUP", "HAVING", "IF", "IGNORE", "IMMEDIATE",
-            "IN", "INDEX", "INDEXED", "INITIALLY", "INNER", "INSERT", "INSTEAD", "INTERSECT", "INTO",
+            "IN", "INDEX", "INDEXED", "INITIALLY", "INNER", InsertKeyword, "INSTEAD", "INTERSECT", "INTO",
             "IS", "ISNULL", "JOIN", "KEY", "LEFT", "LIKE", "LIMIT", "MATCH", "NATURAL", "NO",
             "NOT", "NOTNULL", "NULL", "OF", "OFFSET", "ON", "OR", "ORDER", "OUTER", "PLAN",
-            "PRAGMA", "PRIMARY", "QUERY", "RAISE", "RECURSIVE", "REFERENCES", "REGEXP", "REINDEX",
-            "RELEASE", "RENAME", "REPLACE", "RESTRICT", "RIGHT", "ROLLBACK", "ROW", "SAVEPOINT",
-            "SELECT", "SET", "TABLE", "TEMP", "TEMPORARY", "THEN", "TO", "TRANSACTION", "TRIGGER",
-            "UNION", "UNIQUE", "UPDATE", "USING", "VACUUM", "VALUES", "VIEW", "VIRTUAL", "WHEN",
+            PragmaKeyword, "PRIMARY", "QUERY", "RAISE", "RECURSIVE", "REFERENCES", "REGEXP", "REINDEX",
+            "RELEASE", "RENAME", ReplaceKeyword, "RESTRICT", "RIGHT", "ROLLBACK", "ROW", "SAVEPOINT",
+            SelectKeyword, "SET", TableKeyword, "TEMP", "TEMPORARY", "THEN", "TO", "TRANSACTION", "TRIGGER",
+            UnionKeyword, "UNIQUE", UpdateKeyword, "USING", VacuumKeyword, "VALUES", ViewKeyword, "VIRTUAL", "WHEN",
             "WHERE", "WITH", "WITHOUT"
         };
 
