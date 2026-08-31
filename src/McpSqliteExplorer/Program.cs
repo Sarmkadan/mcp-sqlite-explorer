@@ -1,4 +1,5 @@
 using McpSqliteExplorer;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,22 @@ if (!File.Exists(dbPath))
     return 1;
 }
 
+SqliteExplorer explorer;
+try
+{
+    explorer = new SqliteExplorer(dbPath);
+}
+catch (ArgumentException ex)
+{
+    await Console.Error.WriteLineAsync($"invalid database path: {ex.Message}");
+    return 1;
+}
+catch (SqliteException ex)
+{
+    await Console.Error.WriteLineAsync($"unable to open database: {ex.Message}");
+    return 1;
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 
 // MCP talks over stdio, so anything written to stdout that is not a protocol
@@ -28,12 +45,19 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
 
-builder.Services.AddSingleton(new SqliteExplorer(dbPath));
+builder.Services.AddSingleton(explorer);
 
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
     .WithToolsFromAssembly();
 
-await builder.Build().RunAsync();
-return 0;
+try
+{
+    await builder.Build().RunAsync();
+    return 0;
+}
+finally
+{
+    explorer.Dispose();
+}
