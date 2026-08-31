@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 
 namespace McpSqliteExplorer;
 
@@ -23,7 +21,11 @@ public static class SqliteToolsExtensions
     {
         ArgumentNullException.ThrowIfNull(explorer);
 
-        return SqliteTools.ListTables(explorer);
+        return SqliteTools.Guarded(() =>
+        {
+            var tables = explorer.ListTables();
+            return new { count = tables.Count, tables };
+        });
     }
 
     /// <summary>
@@ -38,7 +40,7 @@ public static class SqliteToolsExtensions
     public static string GetRowCount(this SqliteExplorer explorer, string table)
     {
         ArgumentNullException.ThrowIfNull(explorer);
-        ArgumentException.ThrowIfNullOrEmpty(table);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
 
         var sql = $"SELECT COUNT(*) AS row_count FROM {table};";
 
@@ -56,35 +58,27 @@ public static class SqliteToolsExtensions
     {
         ArgumentNullException.ThrowIfNull(explorer);
 
-        var tablesResult = SqliteTools.ListTables(explorer);
-        var tablesPayload = System.Text.Json.JsonSerializer.Deserialize<
-            System.Text.Json.JsonElement>(tablesResult);
-
-        var tables = tablesPayload.GetProperty("tables");
-        var allColumns = new List<ColumnInfo>();
-
-        foreach (var table in tables.EnumerateArray())
+        return SqliteTools.Guarded(() =>
         {
-            var tableName = table.GetProperty("name").GetString();
-            var tableType = table.GetProperty("type").GetString();
+            var tables = explorer.ListTables();
+            var allColumns = new List<ColumnInfo>();
 
-            var columnsResult = SqliteTools.DescribeTable(explorer, tableName);
-            var columnsPayload = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(columnsResult);
-            var columns = columnsPayload.GetProperty("columns");
-
-            foreach (var column in columns.EnumerateArray())
+            foreach (var table in tables)
             {
-                allColumns.Add(new ColumnInfo(
-                    tableName ?? string.Empty,
-                    tableType ?? string.Empty,
-                    column.GetProperty("name").GetString() ?? string.Empty,
-                    column.GetProperty("type").GetString() ?? string.Empty,
-                    column.GetProperty("notNull").GetBoolean(),
-                    column.GetProperty("primaryKey").GetBoolean()));
+                foreach (var column in explorer.DescribeTable(table.Name))
+                {
+                    allColumns.Add(new ColumnInfo(
+                        table.Name,
+                        table.Type,
+                        column.Name,
+                        column.Type,
+                        column.NotNull,
+                        column.PrimaryKey));
+                }
             }
-        }
 
-        return System.Text.Json.JsonSerializer.Serialize(new { totalColumns = allColumns.Count, columns = allColumns });
+            return new { totalColumns = allColumns.Count, columns = allColumns };
+        });
     }
 
     /// <summary>
@@ -98,34 +92,30 @@ public static class SqliteToolsExtensions
     {
         ArgumentNullException.ThrowIfNull(explorer);
 
-        var tablesResult = SqliteTools.ListTables(explorer);
-        var tablesPayload = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(tablesResult);
-        var tables = tablesPayload.GetProperty("tables");
-
-        var tableCount = 0;
-        var viewCount = 0;
-        var totalColumns = 0;
-
-        foreach (var table in tables.EnumerateArray())
+        return SqliteTools.Guarded(() =>
         {
-            var tableType = table.GetProperty("type").GetString();
-            if (string.Equals(tableType, "table", StringComparison.OrdinalIgnoreCase))
-                tableCount++;
-            else if (string.Equals(tableType, "view", StringComparison.OrdinalIgnoreCase))
-                viewCount++;
+            var tables = explorer.ListTables();
+            var tableCount = 0;
+            var viewCount = 0;
+            var totalColumns = 0;
 
-            var tableName = table.GetProperty("name").GetString();
-            var columnsResult = SqliteTools.DescribeTable(explorer, tableName);
-            var columnsPayload = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(columnsResult);
-            totalColumns += columnsPayload.GetProperty("columnCount").GetInt32();
-        }
+            foreach (var table in tables)
+            {
+                if (string.Equals(table.Type, "table", StringComparison.OrdinalIgnoreCase))
+                    tableCount++;
+                else if (string.Equals(table.Type, "view", StringComparison.OrdinalIgnoreCase))
+                    viewCount++;
 
-        return System.Text.Json.JsonSerializer.Serialize(new
-        {
-            tables = tableCount,
-            views = viewCount,
-            totalColumns = totalColumns,
-            totalObjects = tables.GetArrayLength()
+                totalColumns += explorer.DescribeTable(table.Name).Count;
+            }
+
+            return new
+            {
+                tables = tableCount,
+                views = viewCount,
+                totalColumns,
+                totalObjects = tables.Count
+            };
         });
     }
 
@@ -141,7 +131,7 @@ public static class SqliteToolsExtensions
     public static string SampleTable(this SqliteExplorer explorer, string table, int rowCount = 10)
     {
         ArgumentNullException.ThrowIfNull(explorer);
-        ArgumentException.ThrowIfNullOrEmpty(table);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
 
         // Cap the requested row count at 100 as per the task description.
         int capped = Math.Min(rowCount, 100);
