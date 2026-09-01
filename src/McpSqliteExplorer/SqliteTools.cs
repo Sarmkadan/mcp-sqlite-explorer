@@ -51,6 +51,34 @@ public sealed class SqliteTools
         });
 
     /// <summary>
+    /// Search column names across all tables and views using a case-insensitive substring match.
+    /// </summary>
+    /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
+    /// <param name="pattern">The substring to search for in column names.</param>
+    /// <returns>A JSON string containing the pattern, match count, and matching columns.</returns>
+    [McpServerTool(Name = "search_columns")]
+    [Description("Search column names across all tables and views using a case-insensitive substring match.")]
+    public static string SearchColumns(
+        SqliteExplorer explorer,
+        [Description("The substring to search for in column names.")] string pattern) =>
+        Guarded(() =>
+        {
+            ArgumentNullException.ThrowIfNull(explorer);
+            ArgumentException.ThrowIfNullOrEmpty(pattern);
+            var matches = explorer.ListTables()
+                .SelectMany(table => explorer.DescribeTable(table.Name)
+                    .Where(column => column.Name.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                    .Select(column => new
+                    {
+                        table = table.Name,
+                        column = column.Name,
+                        type = column.Type
+                    }))
+                .ToList();
+            return new { pattern, matchCount = matches.Count, matches };
+        });
+
+    /// <summary>
     /// List the indexes defined on a table or view, including uniqueness, origin, partial flag and the indexed columns.
     /// </summary>
     /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
