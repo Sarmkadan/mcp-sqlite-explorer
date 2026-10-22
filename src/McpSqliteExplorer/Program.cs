@@ -3,29 +3,66 @@ using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 // The database path comes from the first CLI argument or the SQLITE_DB_PATH
-// environment variable. Nothing else is configurable - this server does one
-// thing: expose a single SQLite file to an MCP client, read-only.
+// environment variable; everything else is read from the McpSqliteExplorer
+// configuration section (e.g. McpSqliteExplorer__MaxRows). The options are
+// validated when the host starts, so every problem is reported at once.
+var builder = Host.CreateApplicationBuilder(args);
+
 var dbPath = args.FirstOrDefault() ?? Environment.GetEnvironmentVariable("SQLITE_DB_PATH");
-
-if (string.IsNullOrWhiteSpace(dbPath))
+if (dbPath is not null)
 {
-    await Console.Error.WriteLineAsync(
-        "usage: McpSqliteExplorer <path-to-sqlite.db>  (or set SQLITE_DB_PATH)");
-    return 1;
+    builder.Configuration[$"{McpSqliteExplorerOptions.SectionName}:DatabasePath"] = dbPath;
 }
 
-if (!File.Exists(dbPath))
-{
-    await Console.Error.WriteLineAsync($"database file not found: {dbPath}");
-    return 1;
-}
+// MCP talks over stdio, so anything written to stdout that is not a protocol
+// frame corrupts the stream. Route logs to stderr only.
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
 
-SqliteExplorer explorer;
+// Registered before the MCP server so its validation hosted service starts first:
+// an invalid configuration aborts startup before the stdio transport begins.
+builder.Services.AddMcpSqliteExplorerOptions();
+
+builder.Services.AddSingleton(sp =>
+{
+    var options = sp.GetRequiredService<IOptions<McpSqliteExplorerOptions>>().Value;
+    return new SqliteExplorer(options.DatabasePath)
+    {
+        QueryTimeoutSeconds = (int)options.QueryTimeout.TotalSeconds,
+    };
+});
+
+builder.Services
+    .AddMcpServer()
+    .WithStdioServerTransport()
+    .WithToolsFromAssembly();
+
+using var host = builder.Build();
+
 try
 {
-    explorer = new SqliteExplorer(dbPath);
+    await host.StartAsync();
+
+    // Open the database now so an unreadable file fails at startup, not on the first tool call.
+    host.Services.GetRequiredService<SqliteExplorer>();
+}
+catch (OptionsValidationException ex)
+{
+    await Console.Error.WriteLineAsync($"invalid configuration ({ex.Failures.Count()} problem(s)):");
+    foreach (var failure in ex.Failures)
+    {
+        await Console.Error.WriteLineAsync($"  - {failure}");
+    }
+
+    return 1;
+}
+catch (FileNotFoundException ex)
+{
+    await Console.Error.WriteLineAsync($"database file not found: {ex.Message}");
+    return 1;
 }
 catch (ArgumentException ex)
 {
@@ -38,26 +75,5 @@ catch (SqliteException ex)
     return 1;
 }
 
-var builder = Host.CreateApplicationBuilder(args);
-
-// MCP talks over stdio, so anything written to stdout that is not a protocol
-// frame corrupts the stream. Route logs to stderr only.
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
-
-builder.Services.AddSingleton(explorer);
-
-builder.Services
-    .AddMcpServer()
-    .WithStdioServerTransport()
-    .WithToolsFromAssembly();
-
-try
-{
-    await builder.Build().RunAsync();
-    return 0;
-}
-finally
-{
-    explorer.Dispose();
-}
+await host.WaitForShutdownAsync();
+return 0;
