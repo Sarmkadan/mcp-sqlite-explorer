@@ -1,3 +1,90 @@
+## Getting Started
+
+McpSqliteExplorer is an MCP server (stdio) that opens one SQLite file read-only. It requires the .NET 10 SDK.
+
+### 1. Build
+
+```bash
+dotnet build McpSqliteExplorer.slnx
+```
+
+### 2. Run
+
+The database path is the first argument, or the `SQLITE_DB_PATH` environment variable. Use an absolute path:
+
+```bash
+dotnet run --no-build --project src/McpSqliteExplorer -- /absolute/path/to/app.db
+```
+
+The process waits for an MCP client on stdin; stop it with Ctrl+C. Keep `--no-build` and run `dotnet build` first: a plain `dotnet run` that has to compile writes build warnings to stdout, which corrupts the MCP stream.
+
+### 3. Client config
+
+Add the server to `.mcp.json` (Claude Code, project root) or to `mcpServers` in `claude_desktop_config.json` (Claude Desktop). Replace both paths with absolute paths:
+
+```json
+{
+  "mcpServers": {
+    "sqlite-explorer": {
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--no-build",
+        "--project",
+        "/absolute/path/to/mcp-sqlite-explorer/src/McpSqliteExplorer",
+        "--",
+        "/absolute/path/to/app.db"
+      ]
+    }
+  }
+}
+```
+
+### 4. First call: `list_tables`
+
+`list_tables` takes no arguments and returns the tables and views (`sqlite_*` internals are hidden). Against a sample `shop.db` with four tables and one view:
+
+```json
+{
+  "count": 5,
+  "tables": [
+    { "name": "customers", "type": "table" },
+    { "name": "order_items", "type": "table" },
+    { "name": "orders", "type": "table" },
+    { "name": "products", "type": "table" },
+    { "name": "v_order_totals", "type": "view" }
+  ]
+}
+```
+
+Columns come from `describe_table` with `{"table": "orders"}` (trimmed to two of four columns):
+
+```json
+{
+  "table": "orders",
+  "columnCount": 4,
+  "columns": [
+    { "name": "id", "type": "INTEGER", "notNull": false, "defaultValue": null, "primaryKey": true },
+    { "name": "customer_id", "type": "INTEGER", "notNull": true, "defaultValue": null, "primaryKey": false },
+    "..."
+  ]
+}
+```
+
+Row counts come from `table_stats` called with no arguments (per-table overview; tables only, no views):
+
+```json
+{
+  "count": 4,
+  "tables": [
+    { "table": "customers", "rowCount": 3, "columnCount": 4, "indexCount": 1, "estimatedSizeBytes": null },
+    { "table": "order_items", "rowCount": 4, "columnCount": 3, "indexCount": 1, "estimatedSizeBytes": null },
+    { "table": "orders", "rowCount": 3, "columnCount": 4, "indexCount": 1, "estimatedSizeBytes": null },
+    { "table": "products", "rowCount": 3, "columnCount": 4, "indexCount": 1, "estimatedSizeBytes": null }
+  ]
+}
+```
+
 ## SqliteToolsExtensionsTests
 
 The SqliteToolsExtensionsTests class contains unit tests for the SqliteToolsExtensions class. It verifies the correctness of various extension methods for SqliteTools, including GetTableCount, GetRowCount, GetAllColumns, and GetSchemaSummary.
