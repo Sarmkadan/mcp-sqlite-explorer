@@ -85,6 +85,138 @@ Row counts come from `table_stats` called with no arguments (per-table overview;
 }
 ```
 
+## Running queries
+
+`run_select` runs one read-only `SELECT` (or `WITH ... SELECT`) statement. Its optional arguments are `limit` (1-1000, default 100) and `timeBudgetSeconds` (default 15).
+
+The examples use the sample `shop.db` (3 customers, 3 products, 3 orders, 4 order items). The JSON shown is what `SqliteValueConverter.QueryResultConverter` writes. Setup, once:
+
+```csharp
+using System.Text.Json;
+using McpSqliteExplorer;
+
+using var explorer = new SqliteExplorer("/absolute/path/to/shop.db");
+var options = SqliteValueConverter.CreateJsonOptions(true, true, new SqliteValueConverter.QueryResultConverter());
+```
+
+### Simple SELECT
+
+```csharp
+var result = explorer.RunSelect("SELECT id, email, full_name FROM customers ORDER BY id");
+Console.WriteLine(JsonSerializer.Serialize(result, options));
+```
+
+```json
+{
+  "columns": [
+    "id",
+    "email",
+    "full_name"
+  ],
+  "rows": [
+    [
+      1,
+      "ada@example.com",
+      "Ada Lovelace"
+    ],
+    [
+      2,
+      "alan@example.com",
+      "Alan Turing"
+    ],
+    [
+      3,
+      "grace@example.com",
+      "Grace Hopper"
+    ]
+  ],
+  "appliedRowCap": 100
+}
+```
+
+The `run_select` tool does not use this converter. An MCP client receives a different envelope, with each row as an object keyed by column name (abbreviated):
+
+```json
+{
+  "columns": ["id", "email", "full_name"],
+  "rowCount": 3,
+  "appliedRowCap": 100,
+  "truncated": false,
+  "timedOut": false,
+  "timeoutMessage": null,
+  "rowsBeforeTimeout": 0,
+  "rows": [
+    { "id": 1, "email": "ada@example.com", "full_name": "Ada Lovelace" }
+  ]
+}
+```
+
+### Limiting rows (no query parameters)
+
+`RunSelect` takes raw SQL and binds no parameter values, so put literals directly in the SQL. The `limit` argument is the only value passed alongside the statement. Here it caps the result at two rows, and `truncated` becomes `true` because a third row exists:
+
+```csharp
+var result = explorer.RunSelect("SELECT id, full_name FROM customers ORDER BY id", limit: 2);
+Console.WriteLine(JsonSerializer.Serialize(result, options));
+```
+
+```json
+{
+  "columns": [
+    "id",
+    "full_name"
+  ],
+  "rows": [
+    [
+      1,
+      "Ada Lovelace"
+    ],
+    [
+      2,
+      "Alan Turing"
+    ]
+  ],
+  "appliedRowCap": 2,
+  "truncated": true
+}
+```
+
+### NULL and BLOB values
+
+```csharp
+var result = explorer.RunSelect("SELECT id, NULL AS missing, X'0102FF' AS payload, zeroblob(2000) AS big FROM customers WHERE id = 1");
+Console.WriteLine(JsonSerializer.Serialize(result, options));
+```
+
+```json
+{
+  "columns": [
+    "id",
+    "missing",
+    "payload",
+    "big"
+  ],
+  "rows": [
+    [
+      1,
+      null,
+      "AQL/",
+      "blob(2000 bytes)"
+    ]
+  ],
+  "appliedRowCap": 100
+}
+```
+
+`NULL` becomes `null`. A BLOB is base64 encoded, except when it is longer than 1024 bytes (`SqliteValueConverter.MaxBlobInlineSize`); then it becomes a `blob(N bytes)` placeholder.
+
+### Limitations
+
+- **Read-only.** The database is opened with `Mode=ReadOnly`. A call must contain exactly one statement that starts with `SELECT` or `WITH`. `INSERT`, `UPDATE`, `DELETE`, `REPLACE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `ATTACH`, `DETACH`, `REINDEX`, `VACUUM` and `PRAGMA` are refused by a keyword scan. The scan also refuses those words as separate tokens inside string literals, so `SELECT 'a update b'` is rejected.
+- **Row cap.** An omitted or non-positive `limit` means 100. A `limit` above 1000 is silently clamped to 1000. Rows past the cap are dropped and `truncated` is `true`.
+- **No query parameters.** The SQL is sent as written, and there is no argument for bound values.
+- **Value types.** Values come back as SQLite stores them: INTEGER and REAL as numbers, TEXT as strings (dates are TEXT), BLOB as base64 strings. `SELECT 1e999` (Infinity) makes `run_select` return an error payload, while the converter writes it as the string `"Infinity"`. BLOBs over 1024 bytes become `blob(N bytes)` in the converter but are returned in full, base64 encoded, by `run_select`.
+
 ## SqliteToolsExtensionsTests
 
 The SqliteToolsExtensionsTests class contains unit tests for the SqliteToolsExtensions class. It verifies the correctness of various extension methods for SqliteTools, including GetTableCount, GetRowCount, GetAllColumns, and GetSchemaSummary.
