@@ -6,6 +6,31 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>McpSqliteExplorer</RootNamespace>
+
+    <!-- NuGet package metadata -->
+    <PackageId>McpSqliteExplorer</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Vladyslav Zaiets</Authors>
+    <Description>Read-only MCP server (stdio) that exposes a single SQLite file to an MCP client: schema listing, guarded SELECT queries, and analysis tools (query plans, ERD, table stats).</Description>
+    <PackageTags>mcp;sqlite;model-context-protocol</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Sarmkadan/mcp-sqlite-explorer</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/Sarmkadan/mcp-sqlite-explorer</PackageProjectUrl>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+
+    <!-- Packed as a .NET tool: dotnet tool install -g McpSqliteExplorer -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>mcp-sqlite-explorer</ToolCommandName>
+
+    <!-- Deterministic builds and SourceLink -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,9 +38,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
     <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.402" PrivateAssets="All" />
   </ItemGroup>
 
 </Project>
