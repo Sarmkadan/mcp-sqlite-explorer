@@ -23,8 +23,9 @@ public static class SqliteValueConverter
         /// <inheritdoc />
         public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            // Delegate to the default behavior for deserialization
-            return JsonSerializer.Deserialize<object?>(ref reader, options);
+            // Match the default object deserialization (a JsonElement). Calling Deserialize<object?>
+            // here would re-enter this converter and recurse forever.
+            return JsonElement.ParseValue(ref reader);
         }
 
         /// <inheritdoc />
@@ -63,8 +64,9 @@ public static class SqliteValueConverter
                 return;
             }
 
-            // For all other types, use default serialization
-            JsonSerializer.Serialize(writer, value, options);
+            // For all other types, use default serialization. Pass the runtime type: with the
+            // static type `object` this converter would match again and recurse forever.
+            JsonSerializer.Serialize(writer, value, value.GetType(), options);
         }
 
         private static void HandleByteArray(Utf8JsonWriter writer, byte[] byteArray, JsonSerializerOptions options)

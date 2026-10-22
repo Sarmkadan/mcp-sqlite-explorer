@@ -14,7 +14,10 @@ namespace McpSqliteExplorer;
 [McpServerToolType]
 public sealed class SqliteTools
 {
-    private static readonly JsonSerializerOptions JsonOptions = SharedJsonExtensions.PrettyOptions;
+    private static readonly JsonSerializerOptions JsonOptions = SqliteValueConverter.CreateJsonOptions(
+        camelCaseProperties: true,
+        writeIndented: true,
+        includeObjectConverter: false);
 
     /// <summary>
     /// List the tables and views in the SQLite database (internal sqlite_* objects are hidden).
