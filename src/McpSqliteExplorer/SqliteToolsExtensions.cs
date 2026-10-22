@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json.Serialization;
 
 namespace McpSqliteExplorer;
 
@@ -88,13 +90,30 @@ public static class SqliteToolsExtensions
     /// <returns>A JSON string containing comprehensive schema summary.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="explorer"/> is null.</exception>
     /// <exception cref="InvalidOperationException">Thrown when JSON parsing fails or required properties are missing.</exception>
-    public static string GetSchemaSummary(this SqliteExplorer explorer)
+    public static string GetSchemaSummary(this SqliteExplorer explorer) =>
+        explorer.GetSchemaSummary(new SchemaSummaryOptions());
+
+    /// <summary>
+    /// Gets a summary of the database schema, limited to the tables and views selected by
+    /// <paramref name="options"/>. Row counts and sample rows are included only when the options ask for them.
+    /// </summary>
+    /// <param name="explorer">The SQL explorer instance.</param>
+    /// <param name="options">Which objects to report, and whether to count rows or sample them.</param>
+    /// <returns>A JSON string containing the schema summary.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="explorer"/> or <paramref name="options"/> is null.</exception>
+    public static string GetSchemaSummary(this SqliteExplorer explorer, SchemaSummaryOptions options)
     {
         ArgumentNullException.ThrowIfNull(explorer);
+        ArgumentNullException.ThrowIfNull(options);
 
         return SqliteTools.Guarded(() =>
         {
-            var tables = explorer.ListTables();
+            var include = options.IncludeTables.Select(SchemaSummaryOptions.CompilePattern).ToList();
+            var exclude = options.ExcludeTables.Select(SchemaSummaryOptions.CompilePattern).ToList();
+            var tables = explorer.ListTables()
+                .Where(table => SchemaSummaryOptions.IsSelected(table.Name, include, exclude))
+                .ToList();
+
             var tableCount = 0;
             var viewCount = 0;
             var totalColumns = 0;
@@ -109,15 +128,42 @@ public static class SqliteToolsExtensions
                 totalColumns += explorer.DescribeTable(table.Name).Count;
             }
 
-            return new
+            // Each count is a full scan, so it is skipped rather than run over a large schema.
+            var rowCountsSkipped = options.CountRows && tables.Count > options.MaxCountedTables;
+            IReadOnlyDictionary<string, long>? rowCounts = null;
+            if (options.CountRows && !rowCountsSkipped)
             {
-                tables = tableCount,
-                views = viewCount,
-                totalColumns,
-                totalObjects = tables.Count
-            };
+                rowCounts = tables.ToDictionary(table => table.Name, table => explorer.CountRows(table.Name));
+            }
+
+            IReadOnlyDictionary<string, object>? samples = null;
+            if (options.SampleRows > 0)
+            {
+                samples = tables.ToDictionary(
+                    table => table.Name,
+                    table => SqliteTools.ToPayload(explorer.SampleRows(table.Name, options.SampleRows)));
+            }
+
+            return new SchemaSummaryPayload(
+                Tables: tableCount,
+                Views: viewCount,
+                TotalColumns: totalColumns,
+                TotalObjects: tables.Count,
+                RowCountsSkipped: options.CountRows ? rowCountsSkipped : null,
+                RowCounts: rowCounts,
+                Samples: samples);
         });
     }
+
+    /// <summary>Shape of the JSON returned by <see cref="GetSchemaSummary(SqliteExplorer, SchemaSummaryOptions)"/>.</summary>
+    private sealed record SchemaSummaryPayload(
+        int Tables,
+        int Views,
+        int TotalColumns,
+        int TotalObjects,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? RowCountsSkipped,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, long>? RowCounts,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyDictionary<string, object>? Samples);
 
     /// <summary>
     /// Returns a random sample of rows from the specified table.

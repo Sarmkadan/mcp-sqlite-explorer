@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace McpSqliteExplorer;
@@ -28,6 +29,9 @@ public sealed class McpSqliteExplorerOptions
 
     /// <summary>Time-to-live for catalog cache entries. Must not be negative.</summary>
     public TimeSpan CatalogCacheTtl { get; set; } = TimeSpan.Zero;
+
+    /// <summary>Schema summary settings, bound from the <c>SchemaSummary</c> subsection.</summary>
+    public SchemaSummaryOptions SchemaSummary { get; set; } = new();
 }
 
 /// <summary>
@@ -49,6 +53,10 @@ public static class McpSqliteExplorerOptionsServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddSingleton<IValidateOptions<McpSqliteExplorerOptions>, McpSqliteExplorerOptionsValidator>();
+
+        // Added after ValidateOnStart so hosted services start in this order: validation first, then
+        // the log line. The line therefore only appears for a configuration that passed validation.
+        services.AddHostedService<EffectiveOptionsLogger>();
 
         return services;
     }

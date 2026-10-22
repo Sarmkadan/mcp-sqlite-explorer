@@ -224,7 +224,7 @@ public sealed class SqliteTools
         }
     }
 
-    private static object ToPayload(QueryResult result)
+    internal static object ToPayload(QueryResult result)
     {
         var rows = result.Rows
             .Select(row =>

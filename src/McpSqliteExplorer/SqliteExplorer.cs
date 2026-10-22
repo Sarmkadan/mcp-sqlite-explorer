@@ -457,6 +457,23 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
         return ExecuteReadOnly(sql, cap, timeBudgetSeconds);
     }
 
+    /// <summary>Returns the number of rows in a table or view. Each call is a full scan.</summary>
+    /// <param name="table">Name of the table or view to count.</param>
+    /// <returns>The number of rows.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="table"/> is empty or does not exist.</exception>
+    public long CountRows(string table)
+    {
+        var safeName = RequireExistingTable(table);
+
+        return ExecuteWithRetryAsync(() =>
+        {
+            using var connection = OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM {QuoteIdentifier(safeName)};";
+            return Convert.ToInt64(command.ExecuteScalar());
+        }).GetAwaiter().GetResult();
+    }
+
     /// <summary>
     /// Runs a single read-only <c>SELECT</c> (or <c>WITH ... SELECT</c>) statement,
     /// capping the number of rows materialised.
