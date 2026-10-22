@@ -1193,13 +1193,17 @@ public class SqliteExplorerValidationTests
     }
 
     [Fact]
-    public void ValidateSql_WithWhitespaceSql_ThrowsArgumentException()
+    public void ValidateSql_WithWhitespaceSql_ReturnsError()
     {
         // Arrange
         var sql = "   ";
 
-        // Act & Assert
-        Assert.Throws<ArgumentException>(() => SqliteExplorerValidation.ValidateSql(sql));
+        // Act
+        var result = SqliteExplorerValidation.ValidateSql(sql);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Equal("SQL statement must not be empty or whitespace", result[0]);
     }
 
     [Fact]
@@ -1234,7 +1238,7 @@ public class SqliteExplorerValidationTests
     public void ValidateSql_WithMultipleStatements_ReturnsError()
     {
         // Arrange
-        var sql = "SELECT * FROM users; DELETE FROM users";
+        var sql = "SELECT * FROM users; SELECT * FROM orders";
 
         // Act
         var result = SqliteExplorerValidation.ValidateSql(sql);

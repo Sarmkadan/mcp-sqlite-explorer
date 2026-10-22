@@ -41,14 +41,28 @@ namespace McpSqliteExplorer.Tests
         /// </summary>
         public void ListTables_EmptyDatabase_ReturnsEmptyList()
         {
-            // Arrange
-            var explorer = new SqliteExplorer(_testDatabase.Path);
+            // Arrange: a file with no tables (the shared TestDatabase is seeded with some)
+            var emptyPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"mcp-sqlite-empty-{Guid.NewGuid():N}.db");
+            try
+            {
+                using (var connection = new SqliteConnection($"Data Source={emptyPath};Mode=ReadWriteCreate"))
+                {
+                    connection.Open();
+                }
+                var explorer = new SqliteExplorer(emptyPath);
 
-            // Act
-            var result = SqliteTools.ListTables(explorer);
+                // Act
+                var result = SqliteTools.ListTables(explorer);
 
-            // Assert
-            Assert.Empty(result);
+                // Assert
+                using var json = System.Text.Json.JsonDocument.Parse(result);
+                Assert.Equal(0, json.RootElement.GetProperty("count").GetInt32());
+                Assert.Empty(json.RootElement.GetProperty("tables").EnumerateArray());
+            }
+            finally
+            {
+                File.Delete(emptyPath);
+            }
         }
 
         [Fact]
@@ -134,7 +148,9 @@ INSERT INTO test_table (id, name) VALUES
             var result = SqliteTools.SampleRows(explorer, "test_table", 3);
 
             // Assert
-            Assert.True(result.Length <= 3);
+            using var json = System.Text.Json.JsonDocument.Parse(result);
+            Assert.True(json.RootElement.GetProperty("rowCount").GetInt32() <= 3);
+            Assert.True(json.RootElement.GetProperty("rows").GetArrayLength() <= 3);
         }
     }
 }

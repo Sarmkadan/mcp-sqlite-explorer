@@ -107,8 +107,8 @@ namespace McpSqliteExplorer.Tests
             bool found = false;
             foreach (var edge in edges.EnumerateArray())
             {
-                if (edge.GetProperty("fromTable").GetString() == "child" &&
-                    edge.GetProperty("toTable").GetString() == "parent")
+                if (edge.GetProperty("table").GetString() == "child" &&
+                    edge.GetProperty("referencesTable").GetString() == "parent")
                 {
                     found = true;
                     break;
@@ -131,8 +131,10 @@ namespace McpSqliteExplorer.Tests
             // Ensure the chain does not contain unrelated tables.
             foreach (var hop in hops.EnumerateArray())
             {
-                var table = hop.GetProperty("table").GetString();
-                Assert.True(table == "child" || table == "parent");
+                var fromTable = hop.GetProperty("fromTable").GetString();
+                var toTable = hop.GetProperty("toTable").GetString();
+                Assert.True(fromTable is "child" or "parent");
+                Assert.True(toTable is "child" or "parent");
             }
         }
 
@@ -144,7 +146,7 @@ namespace McpSqliteExplorer.Tests
 
             Assert.Equal("mermaid", root.GetProperty("format").GetString());
             var diagram = root.GetProperty("diagram").GetString();
-            Assert.Contains("classDiagram", diagram); // basic sanity check
+            Assert.Contains("erDiagram", diagram); // basic sanity check
             Assert.Contains("parent", diagram);
             Assert.Contains("child", diagram);
         }
@@ -184,7 +186,7 @@ namespace McpSqliteExplorer.Tests
             bool found = false;
             foreach (var tbl in tables.EnumerateArray())
             {
-                if (tbl.GetProperty("name").GetString() == "child")
+                if (tbl.GetProperty("table").GetString() == "child")
                 {
                     found = true;
                     break;
@@ -272,8 +274,8 @@ namespace McpSqliteExplorer.Tests
             // Should have at least one suggestion for the department_id column
             Assert.NotEmpty(suggestionsArray);
             var suggestion = suggestionsArray[0];
-            Assert.Equal("employee", suggestion.GetProperty("Table").GetString());
-            var columns = suggestion.GetProperty("Columns");
+            Assert.Equal("employee", suggestion.GetProperty("table").GetString());
+            var columns = suggestion.GetProperty("columns");
             Assert.Contains(columns.EnumerateArray(), c => c.GetString().Equals("department_id", StringComparison.OrdinalIgnoreCase));
         }
 
@@ -394,8 +396,8 @@ namespace McpSqliteExplorer.Tests
             // Should suggest a composite index
             Assert.NotEmpty(suggestionsArray);
             var suggestion = suggestionsArray[0];
-            Assert.Equal("product", suggestion.GetProperty("Table").GetString());
-            var columns = suggestion.GetProperty("Columns");
+            Assert.Equal("product", suggestion.GetProperty("table").GetString());
+            var columns = suggestion.GetProperty("columns");
             var columnList = columns.EnumerateArray().Select(c => c.GetString()).ToList();
 
             // Should include both filtered columns in the suggestion

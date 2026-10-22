@@ -123,13 +123,13 @@ public class SqliteExplorerGuardSelectOnlyTests
     }
 
     [Fact]
-    public void RunSelect_MultipleSelectStatements_ThrowsSqliteException()
+    public void RunSelect_MultipleSelectStatements_ThrowsArgumentException()
     {
         string dbFile = CreateTestDatabase();
         try
         {
             var explorer = new SqliteExplorer(dbFile);
-            Assert.Throws<SqliteException>(() => explorer.RunSelect("SELECT * FROM Test; SELECT * FROM Test"));
+            Assert.Throws<ArgumentException>(() => explorer.RunSelect("SELECT * FROM Test; SELECT * FROM Test"));
         }
         finally
         {

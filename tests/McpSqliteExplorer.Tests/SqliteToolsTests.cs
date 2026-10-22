@@ -316,7 +316,7 @@ namespace McpSqliteExplorer.Tests
         public void ListTables_WithNullExplorer_Throws()
         {
             SqliteExplorer nullExplorer = null!;
-            var ex = Assert.Throws<NullReferenceException>(() => SqliteTools.ListTables(nullExplorer));
+            var ex = Assert.Throws<ArgumentNullException>(() => SqliteTools.ListTables(nullExplorer));
             Assert.NotNull(ex);
         }
 
@@ -324,7 +324,7 @@ namespace McpSqliteExplorer.Tests
         public void DescribeTable_WithNullExplorer_Throws()
         {
             SqliteExplorer nullExplorer = null!;
-            var ex = Assert.Throws<NullReferenceException>(() => SqliteTools.DescribeTable(nullExplorer, "authors"));
+            var ex = Assert.Throws<ArgumentNullException>(() => SqliteTools.DescribeTable(nullExplorer, "authors"));
             Assert.NotNull(ex);
         }
 
@@ -332,7 +332,7 @@ namespace McpSqliteExplorer.Tests
         public void ListIndexes_WithNullExplorer_Throws()
         {
             SqliteExplorer nullExplorer = null!;
-            var ex = Assert.Throws<NullReferenceException>(() => SqliteTools.ListIndexes(nullExplorer, "books"));
+            var ex = Assert.Throws<ArgumentNullException>(() => SqliteTools.ListIndexes(nullExplorer, "books"));
             Assert.NotNull(ex);
         }
 
@@ -340,7 +340,7 @@ namespace McpSqliteExplorer.Tests
         public void SampleRows_WithNullExplorer_Throws()
         {
             SqliteExplorer nullExplorer = null!;
-            var ex = Assert.Throws<NullReferenceException>(() => SqliteTools.SampleRows(nullExplorer, "authors"));
+            var ex = Assert.Throws<ArgumentNullException>(() => SqliteTools.SampleRows(nullExplorer, "authors"));
             Assert.NotNull(ex);
         }
 
@@ -348,7 +348,7 @@ namespace McpSqliteExplorer.Tests
         public void RunSelect_WithNullExplorer_Throws()
         {
             SqliteExplorer nullExplorer = null!;
-            var ex = Assert.Throws<NullReferenceException>(() => SqliteTools.RunSelect(nullExplorer, "SELECT 1"));
+            var ex = Assert.Throws<ArgumentNullException>(() => SqliteTools.RunSelect(nullExplorer, "SELECT 1"));
             Assert.NotNull(ex);
         }
 
@@ -356,7 +356,7 @@ namespace McpSqliteExplorer.Tests
         public void ExplainQuery_WithNullExplorer_Throws()
         {
             SqliteExplorer nullExplorer = null!;
-            var ex = Assert.Throws<NullReferenceException>(() => SqliteTools.ExplainQuery(nullExplorer, "SELECT 1"));
+            var ex = Assert.Throws<ArgumentNullException>(() => SqliteTools.ExplainQuery(nullExplorer, "SELECT 1"));
             Assert.NotNull(ex);
         }
 
@@ -364,7 +364,7 @@ namespace McpSqliteExplorer.Tests
         public void TableStats_WithNullExplorer_Throws()
         {
             SqliteExplorer nullExplorer = null!;
-            var ex = Assert.Throws<NullReferenceException>(() => SqliteTools.TableStats(nullExplorer, "authors"));
+            var ex = Assert.Throws<ArgumentNullException>(() => SqliteTools.TableStats(nullExplorer, "authors"));
             Assert.NotNull(ex);
         }
 

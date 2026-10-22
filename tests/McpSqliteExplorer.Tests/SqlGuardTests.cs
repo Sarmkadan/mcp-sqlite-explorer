@@ -75,7 +75,6 @@ public sealed class SqlGuardTests
     [InlineData("-- only a comment")]
     public void GuardSelectOnly_RejectsEmpty(string sql)
     {
-        ArgumentException.ThrowIfNullOrEmpty(sql);
         Assert.Throws<ArgumentException>(() => SqliteExplorer.GuardSelectOnly(sql));
     }
 

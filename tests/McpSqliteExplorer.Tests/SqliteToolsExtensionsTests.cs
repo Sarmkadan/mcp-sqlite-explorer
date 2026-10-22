@@ -178,7 +178,7 @@ namespace McpSqliteExplorer.Tests
         [Fact]
         public void GetRowCount_NullOrEmptyTable_ThrowsArgumentException()
         {
-            var ex1 = Assert.Throws<ArgumentException>(() => _explorer.GetRowCount(null!));
+            var ex1 = Assert.Throws<ArgumentNullException>(() => _explorer.GetRowCount(null!));
             Assert.Equal("table", ex1.ParamName);
 
             var ex2 = Assert.Throws<ArgumentException>(() => _explorer.GetRowCount(string.Empty));

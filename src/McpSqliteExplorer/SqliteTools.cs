@@ -213,7 +213,8 @@ public sealed class SqliteTools
             var result = SqliteExplorer.ExecuteWithRetryAsync(body).GetAwaiter().GetResult();
             return Serialize(result);
         }
-        catch (Exception ex) when (ex is ArgumentException or FileNotFoundException or InvalidOperationException)
+        // ArgumentNullException is a programmer error (a null explorer), not bad input, so it propagates.
+        catch (Exception ex) when (ex is (ArgumentException and not ArgumentNullException) or FileNotFoundException or InvalidOperationException)
         {
             return Serialize(new { error = ex.Message });
         }
