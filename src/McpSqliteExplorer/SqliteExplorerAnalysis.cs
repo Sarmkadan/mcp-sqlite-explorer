@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 
 namespace McpSqliteExplorer;
@@ -513,6 +515,328 @@ public sealed partial class SqliteExplorer
         }
 
         return suggestions;
+    }
+
+    /// <summary>Plain, "double-quoted", [bracketed] or `backticked` SQL identifier.</summary>
+    private const string IdentifierPattern = @"""[^""]+""|\[[^\]]+\]|`[^`]+`|[\p{L}_][\p{L}\p{N}_]*";
+
+    /// <summary>A FROM or JOIN table reference, with an optional alias.</summary>
+    private static readonly Regex TableReferencePattern = new(
+        @"\b(?:FROM|JOIN)\s+(?<table>" + IdentifierPattern + @")(?:\s+(?:AS\s+)?(?<alias>" + IdentifierPattern + @"))?",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>A column reference, optionally qualified by a table or alias. Function names are not matched.</summary>
+    private static readonly Regex ColumnReferencePattern = new(
+        @"(?<![\p{L}\p{N}_$])(?:(?<qualifier>" + IdentifierPattern + @")\s*\.\s*)?(?<column>" + IdentifierPattern + @")(?![\p{L}\p{N}_$]|\s*\()",
+        RegexOptions.CultureInvariant);
+
+    /// <summary>A single-quoted string literal, which is blanked out before scanning for identifiers.</summary>
+    private static readonly Regex StringLiteralPattern = new(@"'(?:[^']|'')*'", RegexOptions.CultureInvariant);
+
+    /// <summary>Matches the SELECT or WITH that opens a parenthesised subquery, checked at the character after the parenthesis.</summary>
+    private static readonly Regex SubqueryStartPattern = new(@"\G\s*(?:SELECT|WITH)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Keywords that end the outer WHERE clause.</summary>
+    private static readonly HashSet<string> WhereTerminators = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "GROUP", "ORDER", "LIMIT", "HAVING", "WINDOW", "UNION", "EXCEPT", "INTERSECT",
+    };
+
+    /// <summary>Keywords that can follow a table reference without being an alias.</summary>
+    private static readonly HashSet<string> NonAliasKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "AS", "WHERE", "JOIN", "LEFT", "RIGHT", "FULL", "INNER", "OUTER", "CROSS", "NATURAL", "ON", "USING",
+        "NOT", "INDEXED", "GROUP", "ORDER", "LIMIT", "HAVING", "WINDOW", "UNION", "EXCEPT", "INTERSECT",
+    };
+
+    /// <summary>
+    /// Finds columns that a SELECT filters on in its outer WHERE clause and that no index
+    /// leads with, then proposes a single-column <c>CREATE INDEX</c> for each. Index coverage
+    /// comes from <c>PRAGMA index_list</c> and <c>PRAGMA index_info</c>. Heuristic by design:
+    /// only the outer WHERE is analysed (subqueries are skipped), tables come from the outer
+    /// FROM/JOIN clauses (comma-separated joins are not followed), and a column wrapped in a
+    /// function still counts as filtered on.
+    /// </summary>
+    public IReadOnlyList<IndexSuggestion> AnalyzeMissingIndexes(string sql)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(sql);
+        // Explaining the plan applies the SELECT-only guard and reports unknown tables or columns from SQLite itself.
+        ExplainQueryPlan(sql);
+
+        var cleaned = StringLiteralPattern.Replace(StripComments(sql), "''");
+        var whereClause = ExtractTopLevelWhere(cleaned);
+        if (whereClause is null)
+            return [];
+
+        var tableNames = ListTables()
+            .Where(t => t.Type == "table")
+            .Select(t => t.Name)
+            .ToList();
+        var aliases = ResolveTopLevelTableAliases(cleaned, tableNames);
+        var referenced = aliases.Values.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        var columnsByTable = referenced.ToDictionary(
+            t => t, t => DescribeTable(t), StringComparer.OrdinalIgnoreCase);
+        var filters = CollectFilteredColumns(StripSubqueries(whereClause), aliases, referenced, columnsByTable);
+
+        var coveredColumns = referenced.ToDictionary(
+            t => t, t => IndexLeadingColumns(t, columnsByTable[t]), StringComparer.OrdinalIgnoreCase);
+        var takenIndexNames = ListIndexNames();
+        var suggestions = new List<IndexSuggestion>();
+
+        foreach (var (table, column, usage) in filters)
+        {
+            if (coveredColumns[table].Contains(column))
+                continue;
+
+            var indexName = ReserveIndexName($"idx_{table}_{column}", takenIndexNames);
+            suggestions.Add(new IndexSuggestion(
+                Table: table,
+                Columns: [column],
+                ProposedSql: $"CREATE INDEX {QuoteIdentifier(indexName)} ON {QuoteIdentifier(table)} ({QuoteIdentifier(column)});",
+                Rationale: $"The WHERE clause filters on '{usage}', but no index on '{table}' leads with '{column}', so SQLite has to scan the table to evaluate it. Verify against real data before creating the index."));
+        }
+
+        return suggestions;
+    }
+
+    /// <summary>
+    /// Matches the columns referenced in a WHERE clause. Each match is resolved to the outer
+    /// tables it can belong to: a qualified reference goes to the table its alias names, a bare
+    /// reference goes to every outer table that has such a column (a valid query only has one).
+    /// </summary>
+    private static List<(string Table, string Column, string Usage)> CollectFilteredColumns(
+        string whereClause,
+        IReadOnlyDictionary<string, string> aliases,
+        List<string> referenced,
+        IReadOnlyDictionary<string, IReadOnlyList<ColumnInfo>> columnsByTable)
+    {
+        var filters = new List<(string Table, string Column, string Usage)>();
+        var seen = new HashSet<(string Table, string Column)>();
+
+        foreach (Match match in ColumnReferencePattern.Matches(whereClause))
+        {
+            var columnName = Unquote(match.Groups["column"].Value);
+            var qualifier = match.Groups["qualifier"];
+
+            string? qualifiedTable = null;
+            if (qualifier.Success)
+            {
+                if (!aliases.TryGetValue(Unquote(qualifier.Value), out qualifiedTable))
+                    continue;
+            }
+
+            List<string> candidates = qualifiedTable is null ? referenced : [qualifiedTable];
+            foreach (var table in candidates)
+            {
+                var column = columnsByTable[table]
+                    .FirstOrDefault(c => c.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+                if (column is not null && seen.Add((table, column.Name)))
+                    filters.Add((table, column.Name, match.Value.Trim()));
+            }
+        }
+
+        return filters;
+    }
+
+    /// <summary>
+    /// Maps every alias and table name used by the outer FROM/JOIN clauses to its canonical
+    /// table name. Subquery references are ignored because their tables are not in the outer scope.
+    /// </summary>
+    private static Dictionary<string, string> ResolveTopLevelTableAliases(string sql, IReadOnlyList<string> tableNames)
+    {
+        var aliases = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Match match in TableReferencePattern.Matches(sql))
+        {
+            if (!IsTopLevel(sql, match.Index))
+                continue;
+
+            var table = tableNames.FirstOrDefault(
+                t => t.Equals(Unquote(match.Groups["table"].Value), StringComparison.OrdinalIgnoreCase));
+            if (table is null)
+                continue;
+
+            aliases.TryAdd(table, table);
+            var alias = match.Groups["alias"];
+            if (alias.Success && !NonAliasKeywords.Contains(alias.Value))
+                aliases[Unquote(alias.Value)] = table;
+        }
+
+        return aliases;
+    }
+
+    /// <summary>
+    /// Returns the text between the outermost WHERE and the next top-level GROUP BY, ORDER BY,
+    /// LIMIT or similar keyword (or the end of the statement), or null when there is none.
+    /// Parenthesised text and quoted identifiers are skipped so nested keywords are ignored.
+    /// </summary>
+    private static string? ExtractTopLevelWhere(string sql)
+    {
+        var depth = 0;
+        var clauseStart = -1;
+        for (var i = 0; i < sql.Length; i++)
+        {
+            var c = sql[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                depth--;
+            }
+            else if (c is '"' or '`' or '[')
+            {
+                i = SkipQuoted(sql, i);
+            }
+            else if (depth == 0 && IsIdentifierStart(c))
+            {
+                var end = i;
+                while (end < sql.Length && IsIdentifierChar(sql[end]))
+                    end++;
+
+                var word = sql[i..end];
+                if (clauseStart < 0)
+                {
+                    if (word.Equals("WHERE", StringComparison.OrdinalIgnoreCase))
+                        clauseStart = end;
+                }
+                else if (WhereTerminators.Contains(word))
+                {
+                    return sql[clauseStart..i];
+                }
+
+                i = end - 1;
+            }
+        }
+
+        return clauseStart < 0 ? null : sql[clauseStart..];
+    }
+
+    /// <summary>Replaces every parenthesised subquery with <c>()</c>, so its columns are not attributed to the outer query.</summary>
+    private static string StripSubqueries(string text)
+    {
+        var builder = new StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '(' && SubqueryStartPattern.IsMatch(text, i + 1))
+            {
+                i = FindClosingParen(text, i);
+                builder.Append("()");
+                continue;
+            }
+
+            builder.Append(text[i]);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>Returns the index of the parenthesis that closes the one opened at <paramref name="open"/>.</summary>
+    private static int FindClosingParen(string text, int open)
+    {
+        var depth = 0;
+        for (var i = open; i < text.Length; i++)
+        {
+            if (text[i] == '(')
+                depth++;
+            else if (text[i] == ')' && --depth == 0)
+                return i;
+        }
+
+        return text.Length - 1;
+    }
+
+    /// <summary>Returns the index of the character that closes the quoted identifier opened at <paramref name="open"/>.</summary>
+    private static int SkipQuoted(string sql, int open)
+    {
+        var close = sql[open] == '[' ? ']' : sql[open];
+        for (var i = open + 1; i < sql.Length; i++)
+        {
+            if (sql[i] != close)
+                continue;
+
+            // A doubled quote inside "..." or `...` is an escaped quote rather than the end of the identifier.
+            if (close != ']' && i + 1 < sql.Length && sql[i + 1] == close)
+            {
+                i++;
+                continue;
+            }
+
+            return i;
+        }
+
+        return sql.Length - 1;
+    }
+
+    /// <summary>True when the character at <paramref name="index"/> is outside every parenthesis.</summary>
+    private static bool IsTopLevel(string sql, int index)
+    {
+        var depth = 0;
+        for (var i = 0; i < index; i++)
+        {
+            if (sql[i] == '(')
+                depth++;
+            else if (sql[i] == ')')
+                depth--;
+        }
+
+        return depth == 0;
+    }
+
+    private static bool IsIdentifierStart(char c) => char.IsLetter(c) || c == '_';
+
+    private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c is '_' or '$';
+
+    /// <summary>Strips one pair of identifier quotes ("x", [x] or `x`) if present.</summary>
+    private static string Unquote(string identifier) =>
+        identifier.Length >= 2 && (identifier[0], identifier[^1]) is ('"', '"') or ('[', ']') or ('`', '`')
+            ? identifier[1..^1]
+            : identifier;
+
+    /// <summary>
+    /// Columns an existing index can answer a filter on directly: the leading column of every
+    /// non-partial index, plus a single INTEGER PRIMARY KEY, which is the rowid itself.
+    /// </summary>
+    private HashSet<string> IndexLeadingColumns(string table, IReadOnlyList<ColumnInfo> columns)
+    {
+        var leading = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var index in ListIndexes(table))
+        {
+            if (!index.Partial && index.Columns.Count > 0)
+                leading.Add(index.Columns[0]);
+        }
+
+        var primaryKeys = columns.Where(c => c.PrimaryKey).ToList();
+        if (primaryKeys.Count == 1 && primaryKeys[0].Type.Equals("INTEGER", StringComparison.OrdinalIgnoreCase))
+            leading.Add(primaryKeys[0].Name);
+
+        return leading;
+    }
+
+    /// <summary>Returns the names of every index in the database, since index names are unique across all tables.</summary>
+    private HashSet<string> ListIndexNames()
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'index';";
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            names.Add(reader.GetString(0));
+
+        return names;
+    }
+
+    /// <summary>Returns <paramref name="baseName"/>, or the first free numbered variant of it, and marks the result as taken.</summary>
+    private static string ReserveIndexName(string baseName, HashSet<string> taken)
+    {
+        var name = baseName;
+        for (var suffix = 2; !taken.Add(name); suffix++)
+            name = $"{baseName}_{suffix}";
+
+        return name;
     }
 
     private static HashSet<string> TokenizeIdentifiers(string sql)

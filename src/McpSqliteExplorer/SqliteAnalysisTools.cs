@@ -158,6 +158,20 @@ public sealed class SqliteAnalysisTools
             return new { sql, count = suggestions.Count, suggestions };
         });
 
+    [McpServerTool(Name = "analyze_missing_indexes")]
+    [Description("Check the WHERE clause of a SELECT for filtered columns that no index leads with (read from PRAGMA index_list and index_info) and suggest a single-column CREATE INDEX for each. Only the outer WHERE is analysed; subquery filters and comma-separated joins are not followed. Suggestions are not executed.")]
+    public static string AnalyzeMissingIndexes(
+        SqliteExplorer explorer,
+        [Description("A single SELECT or WITH ... SELECT statement whose WHERE clause should be checked.")] string sql) =>
+        Guarded(() =>
+        {
+            ValidateExplorer(explorer);
+            ValidateString(sql, nameof(sql));
+
+            var suggestions = explorer.AnalyzeMissingIndexes(sql);
+            return new { sql, count = suggestions.Count, suggestions };
+        });
+
     [McpServerTool(Name = "migration_history")]
     [Description("If this is an EF Core database, list the applied migrations from __EFMigrationsHistory (migration id and EF product version). Reports hasHistoryTable=false for non‑EF databases.")]
     public static string MigrationHistory(SqliteExplorer explorer) =>

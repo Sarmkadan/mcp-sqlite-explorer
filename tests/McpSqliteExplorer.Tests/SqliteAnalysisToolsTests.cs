@@ -209,6 +209,78 @@ namespace McpSqliteExplorer.Tests
         }
 
         [Fact]
+        public void AnalyzeMissingIndexes_UnindexedWhereColumn_SuggestsIndex()
+        {
+            var sql = "SELECT * FROM child WHERE parent_id = 1";
+            var root = ParseJson(SqliteAnalysisTools.AnalyzeMissingIndexes(_explorer, sql));
+
+            Assert.Equal(sql, root.GetProperty("sql").GetString());
+            var suggestion = Assert.Single(root.GetProperty("suggestions").EnumerateArray());
+            Assert.Equal("child", suggestion.GetProperty("table").GetString());
+            Assert.Equal(["parent_id"], suggestion.GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
+            Assert.Equal("CREATE INDEX \"idx_child_parent_id\" ON \"child\" (\"parent_id\");", suggestion.GetProperty("proposedSql").GetString());
+        }
+
+        [Fact]
+        public void AnalyzeMissingIndexes_IndexedOrRowidWhereColumns_NoSuggestions()
+        {
+            // 'value' is led by idx_child_value and 'id' is the INTEGER PRIMARY KEY (the rowid).
+            var root = ParseJson(SqliteAnalysisTools.AnalyzeMissingIndexes(_explorer, "SELECT * FROM child WHERE value = 'x' AND id = 1"));
+
+            Assert.Equal(0, root.GetProperty("count").GetInt32());
+        }
+
+        [Fact]
+        public void AnalyzeMissingIndexes_AliasedJoin_ResolvesColumnsToTheirTables()
+        {
+            var sql = "SELECT c.id FROM child AS c JOIN parent p ON p.id = c.parent_id WHERE p.name = 'Alice' AND c.value = 'x' ORDER BY c.id";
+            var root = ParseJson(SqliteAnalysisTools.AnalyzeMissingIndexes(_explorer, sql));
+
+            // Only parent.name is unindexed; c.value is indexed and p.id is the rowid.
+            var suggestion = Assert.Single(root.GetProperty("suggestions").EnumerateArray());
+            Assert.Equal("parent", suggestion.GetProperty("table").GetString());
+            Assert.Equal(["name"], suggestion.GetProperty("columns").EnumerateArray().Select(c => c.GetString()));
+        }
+
+        [Fact]
+        public void AnalyzeMissingIndexes_SubqueryWhere_IsNotAttributedToOuterTable()
+        {
+            // parent_id is filtered only inside the subquery, so nothing on the outer 'parent' table needs an index.
+            var sql = "SELECT * FROM parent WHERE id IN (SELECT parent_id FROM child WHERE parent_id = 1)";
+            var root = ParseJson(SqliteAnalysisTools.AnalyzeMissingIndexes(_explorer, sql));
+
+            Assert.Equal(0, root.GetProperty("count").GetInt32());
+        }
+
+        [Fact]
+        public void AnalyzeMissingIndexes_StringLiteralAndNoWhere_NoSuggestions()
+        {
+            // The text 'parent_id = 1' is a literal, not a filter; a query without WHERE has nothing to analyse.
+            var literal = ParseJson(SqliteAnalysisTools.AnalyzeMissingIndexes(_explorer, "SELECT * FROM child WHERE value = 'parent_id = 1'"));
+            var noWhere = ParseJson(SqliteAnalysisTools.AnalyzeMissingIndexes(_explorer, "SELECT * FROM child"));
+
+            Assert.Equal(0, literal.GetProperty("count").GetInt32());
+            Assert.Equal(0, noWhere.GetProperty("count").GetInt32());
+        }
+
+        [Fact]
+        public void AnalyzeMissingIndexes_ProposedNameTakenByOtherTable_UsesSuffix()
+        {
+            using (var conn = new SqliteConnection($"Data Source={_dbPath};Mode=ReadWriteCreate"))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "CREATE INDEX idx_child_parent_id ON parent (name);";
+                cmd.ExecuteNonQuery();
+            }
+
+            var root = ParseJson(SqliteAnalysisTools.AnalyzeMissingIndexes(_explorer, "SELECT * FROM child WHERE parent_id = 1"));
+
+            var suggestion = Assert.Single(root.GetProperty("suggestions").EnumerateArray());
+            Assert.Contains("\"idx_child_parent_id_2\"", suggestion.GetProperty("proposedSql").GetString());
+        }
+
+        [Fact]
         public void MigrationHistory_ReportsNoHistoryTable()
         {
             var json = SqliteAnalysisTools.MigrationHistory(_explorer);
