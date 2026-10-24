@@ -386,29 +386,14 @@ internal sealed class SqliteCatalog : ISqliteCatalog
         _disposed = true;
     }
 
-    /// <summary>Milliseconds SQLite itself will wait, internally, for a write lock to clear before raising SQLITE_BUSY.</summary>
-    private const int BusyTimeoutMilliseconds = 3000;
-
-    private SqliteConnection OpenConnection()
-    {
-        var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-
-        // See SqliteExplorer.OpenConnection for why query_only and trusted_schema
-        // are enforced here in addition to Mode=ReadOnly on the connection string:
-        // the read-only guarantee must hold at the engine level, not just because
-        // this class only ever issues SELECT/PRAGMA statements.
-        using var pragma = connection.CreateCommand();
-        pragma.CommandText =
-        $"""
-        PRAGMA busy_timeout = {BusyTimeoutMilliseconds};
-        PRAGMA query_only = ON;
-        PRAGMA trusted_schema = OFF;
-        """;
-        pragma.ExecuteNonQuery();
-
-        return connection;
-    }
+    /// <summary>
+    /// Opens a connection with the engine-level read-only settings from
+    /// <see cref="SqliteReadOnlyConnection"/>. The guarantee holds here as well as in
+    /// <see cref="SqliteExplorer"/>, not only because this class happens to issue
+    /// SELECT and PRAGMA statements.
+    /// </summary>
+    /// <returns>An open connection that cannot modify the database file.</returns>
+    private SqliteConnection OpenConnection() => SqliteReadOnlyConnection.Open(_connectionString);
 
     private string RequireExistingTable(string table)
     {

@@ -25,19 +25,23 @@ public sealed class SqliteConnectionFactory
     }
 
     /// <summary>
-    /// Creates a read-only <see cref="Microsoft.Data.Sqlite.SqliteConnection"/> for the specified database path.
-    /// The connection is configured with <c>Mode=ReadOnly</c> to prevent any write operations.
+    /// Opens a read-only <see cref="Microsoft.Data.Sqlite.SqliteConnection"/> for the specified database path.
+    /// The connection uses <c>Mode=ReadOnly</c> and has <c>query_only</c> and <c>trusted_schema</c> set at the engine level.
     /// </summary>
     /// <param name="databasePath">Path to the SQLite database file.</param>
-    /// <returns>A <see cref="Microsoft.Data.Sqlite.SqliteConnection"/> with <c>Mode=ReadOnly</c>.</exception>
+    /// <returns>An open <see cref="Microsoft.Data.Sqlite.SqliteConnection"/> that cannot modify the database file.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="databasePath"/> is null or empty.</exception>
+    /// <exception cref="Microsoft.Data.Sqlite.SqliteException">Thrown when the database cannot be opened or a pragma is rejected.</exception>
     public Microsoft.Data.Sqlite.SqliteConnection CreateConnection(string databasePath)
     {
+        ArgumentException.ThrowIfNullOrEmpty(databasePath);
+
         var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
         {
             DataSource = databasePath,
             Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly,
         };
 
-        return new Microsoft.Data.Sqlite.SqliteConnection(builder.ToString());
+        return SqliteReadOnlyConnection.Open(builder.ToString());
     }
 }
