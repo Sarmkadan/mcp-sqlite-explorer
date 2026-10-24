@@ -16,12 +16,34 @@ public sealed partial class SqliteExplorer
     public const long DefaultProfileSampleRows = 100_000;
 
     /// <summary>
+    /// Largest row budget <see cref="ProfileTable"/> accepts. Larger requests are rejected
+    /// rather than scanned, so a single call cannot read an arbitrarily large table.
+    /// </summary>
+    public const long MaxProfileSampleRows = 1_000_000;
+
+    /// <summary>
     /// Maximum number of distinct values tracked in memory per column while profiling.
     /// Columns that stay within this cap get exact distinct counts and exact top-N
     /// frequencies (via a follow-up GROUP BY); columns that exceed it are treated as
     /// high-cardinality and reported with approximate figures gathered during the scan.
     /// </summary>
     private const int ProfileDistinctCap = 2_000;
+
+    /// <summary>
+    /// Total number of distinct values retained across all columns of one profiled table.
+    /// Keeps a wide table from multiplying <see cref="ProfileDistinctCap"/> by its column count.
+    /// </summary>
+    private const int ProfileDistinctBudget = 100_000;
+
+    /// <summary>
+    /// Longest text (characters) or blob (bytes) value profiling keeps. Longer values are
+    /// still counted as non-null but are excluded from min/max, distinct counts and top values,
+    /// so a single huge value cannot be retained in memory.
+    /// </summary>
+    private const int ProfileMaxTrackedValueLength = 256;
+
+    /// <summary>SQLite's <c>SQLITE_INTERRUPT</c> result code, raised when a statement is interrupted.</summary>
+    private const int SqliteInterruptCode = 9;
 
     /// <summary>
     /// Runs <c>EXPLAIN QUERY PLAN</c> for a read-only SELECT and returns the plan
@@ -68,95 +90,131 @@ public sealed partial class SqliteExplorer
     /// columns get a follow-up exact <c>GROUP BY</c> for their top-N frequencies.
     /// Tables larger than <paramref name="sampleRows"/> are profiled from a leading
     /// sample rather than scanned in full, and the result is flagged accordingly.
+    /// Text values longer than 256 characters and blobs longer than 256 bytes are counted
+    /// as non-null but excluded from min/max, distinct counts and top values. The whole
+    /// profile must finish within <see cref="QueryTimeoutSeconds"/> (0 disables the limit).
     /// </summary>
     /// <param name="table">Name of the table to profile.</param>
     /// <param name="sampleRows">
     /// Maximum number of rows to scan. Tables with more rows than this are profiled
     /// from a <c>LIMIT</c>-bounded sample instead of the full table. Defaults to
-    /// <see cref="DefaultProfileSampleRows"/>.
+    /// <see cref="DefaultProfileSampleRows"/>; must not exceed <see cref="MaxProfileSampleRows"/>.
     /// </param>
+    /// <returns>The per-column profile of the table.</returns>
     /// <exception cref="ArgumentException">
     /// <paramref name="table"/> is null/empty, does not exist, or <paramref name="sampleRows"/> is not positive.
     /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="sampleRows"/> is greater than <see cref="MaxProfileSampleRows"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The profile exceeded the time budget, or SQLite reported an error.</exception>
     public TableProfile ProfileTable(string table, long sampleRows = DefaultProfileSampleRows)
     {
         ArgumentException.ThrowIfNullOrEmpty(table);
         if (sampleRows <= 0)
             throw new ArgumentException("Sample row budget must be positive.", nameof(sampleRows));
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(sampleRows, MaxProfileSampleRows, nameof(sampleRows));
 
-        return ExecuteWithRetryAsync(() =>
+        return ExecuteWithRetryAsync(() => ProfileWithinTimeBudget(table, sampleRows)).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Runs <see cref="ProfileTableCore"/> under a deadline of <see cref="QueryTimeoutSeconds"/>.
+    /// The deadline is enforced both between rows and by interrupting the SQLite statement
+    /// currently running, so neither a long scan nor a slow GROUP BY can outlive it.
+    /// </summary>
+    private TableProfile ProfileWithinTimeBudget(string table, long sampleRows)
+    {
+        var budget = QueryTimeoutSeconds > 0 ? TimeSpan.FromSeconds(QueryTimeoutSeconds) : Timeout.InfiniteTimeSpan;
+        using var deadline = new CancellationTokenSource(budget);
+
+        try
         {
-            var safeName = RequireExistingTable(table);
-            var columns = DescribeTable(safeName);
-            var quotedTable = QuoteIdentifier(safeName);
+            return ProfileTableCore(table, sampleRows, deadline.Token);
+        }
+        catch (SqliteException ex) when (deadline.IsCancellationRequested && ex.SqliteErrorCode == SqliteInterruptCode)
+        {
+            throw ProfileTimeoutException();
+        }
+    }
 
-            using var connection = OpenConnection();
+    private TableProfile ProfileTableCore(string table, long sampleRows, CancellationToken deadline)
+    {
+        var safeName = RequireExistingTable(table);
+        var columns = DescribeTable(safeName);
+        var quotedTable = QuoteIdentifier(safeName);
+        var quotedColumns = columns.Select(c => QuoteIdentifier(c.Name)).ToList();
+        var selectList = string.Join(", ", quotedColumns);
 
-            long totalRowCount;
-            using (var countCommand = connection.CreateCommand())
+        using var connection = OpenConnection();
+
+        long totalRowCount;
+        using (var countCommand = connection.CreateCommand())
+        {
+            countCommand.CommandText = $"SELECT COUNT(*) FROM {quotedTable};";
+            using var interrupt = InterruptOnCancel(countCommand, deadline);
+            totalRowCount = Convert.ToInt64(countCommand.ExecuteScalar());
+        }
+
+        var isSampled = totalRowCount > sampleRows;
+
+        using var scanCommand = connection.CreateCommand();
+        scanCommand.CommandText = isSampled
+            ? $"SELECT {selectList} FROM {quotedTable} LIMIT $limit;"
+            : $"SELECT {selectList} FROM {quotedTable};";
+        if (isSampled)
+            scanCommand.Parameters.AddWithValue("$limit", sampleRows);
+
+        var budget = new DistinctBudget(ProfileDistinctBudget);
+        var accumulators = columns.Select(_ => new ColumnAccumulator(budget)).ToList();
+        long rowsScanned = 0;
+
+        using (var interrupt = InterruptOnCancel(scanCommand, deadline))
+        using (var reader = scanCommand.ExecuteReader())
+        {
+            while (reader.Read())
             {
-                countCommand.CommandText = $"SELECT COUNT(*) FROM {quotedTable};";
-                totalRowCount = Convert.ToInt64(countCommand.ExecuteScalar());
+                ThrowIfExpired(deadline);
+                rowsScanned++;
+                for (var i = 0; i < accumulators.Count; i++)
+                    accumulators[i].Observe(reader.IsDBNull(i) ? null : reader.GetValue(i));
             }
+        }
 
-            var isSampled = totalRowCount > sampleRows;
-            var quotedColumns = columns.Select(c => QuoteIdentifier(c.Name)).ToList();
-            var selectList = string.Join(", ", quotedColumns);
+        var profiles = new List<ColumnProfile>(columns.Count);
+        for (var i = 0; i < columns.Count; i++)
+        {
+            var column = columns[i];
+            var accumulator = accumulators[i];
+            var nullCount = rowsScanned - accumulator.NonNullCount;
 
-            using var scanCommand = connection.CreateCommand();
-            scanCommand.CommandText = isSampled
-                ? $"SELECT {selectList} FROM {quotedTable} LIMIT $limit;"
-                : $"SELECT {selectList} FROM {quotedTable};";
-            if (isSampled)
-                scanCommand.Parameters.AddWithValue("$limit", sampleRows);
+            var topValues = accumulator.IsLowCardinality
+                ? accumulator.TopValues(TopValueCount)
+                : QueryExactTopValues(connection, quotedTable, quotedColumns[i], isSampled, sampleRows, deadline);
 
-            var accumulators = columns.Select(c => new ColumnAccumulator()).ToList();
-            long rowsScanned = 0;
+            profiles.Add(new ColumnProfile(
+                Name: column.Name,
+                Type: column.Type,
+                NullCount: nullCount,
+                NullRate: rowsScanned == 0 ? 0.0 : Math.Round((double)nullCount / rowsScanned, 4),
+                DistinctCount: accumulator.DistinctCount,
+                Min: accumulator.Min,
+                Max: accumulator.Max,
+                TopValues: topValues));
+        }
 
-            using (var reader = scanCommand.ExecuteReader())
-            {
-                while (reader.Read())
-                {
-                    rowsScanned++;
-                    for (var i = 0; i < accumulators.Count; i++)
-                        accumulators[i].Observe(reader.IsDBNull(i) ? null : reader.GetValue(i));
-                }
-            }
-
-            var profiles = new List<ColumnProfile>(columns.Count);
-            for (var i = 0; i < columns.Count; i++)
-            {
-                var column = columns[i];
-                var accumulator = accumulators[i];
-                var nullCount = rowsScanned - accumulator.NonNullCount;
-
-                var topValues = accumulator.IsLowCardinality
-                    ? accumulator.TopValues(TopValueCount)
-                    : QueryExactTopValues(connection, quotedTable, quotedColumns[i], isSampled, sampleRows);
-
-                profiles.Add(new ColumnProfile(
-                    Name: column.Name,
-                    Type: column.Type,
-                    NullCount: nullCount,
-                    NullRate: rowsScanned == 0 ? 0.0 : Math.Round((double)nullCount / rowsScanned, 4),
-                    DistinctCount: accumulator.DistinctCount,
-                    Min: accumulator.Min,
-                    Max: accumulator.Max,
-                    TopValues: topValues));
-            }
-
-            return new TableProfile(safeName, totalRowCount, profiles, isSampled, rowsScanned);
-        }).GetAwaiter().GetResult();
+        return new TableProfile(safeName, totalRowCount, profiles, isSampled, rowsScanned);
     }
 
     /// <summary>
     /// Runs an exact <c>GROUP BY</c> for a single high-cardinality column's top-N
     /// value frequencies. Reserved for columns whose distinct-value set overflowed
     /// the in-memory cap during the single-pass scan, since a full grouping there
-    /// would defeat the point of the cap.
+    /// would defeat the point of the cap. Values longer than
+    /// <c>ProfileMaxTrackedValueLength</c> are excluded, matching the single-pass scan.
     /// </summary>
     private static IReadOnlyList<ValueFrequency> QueryExactTopValues(
-        SqliteConnection connection, string quotedTable, string quotedColumn, bool isSampled, long sampleRows)
+        SqliteConnection connection, string quotedTable, string quotedColumn, bool isSampled, long sampleRows, CancellationToken deadline)
     {
         using var topCommand = connection.CreateCommand();
         var source = isSampled
@@ -166,12 +224,13 @@ public sealed partial class SqliteExplorer
         $"""
         SELECT {quotedColumn} AS value, COUNT(*) AS occurrences
         FROM {source}
-        WHERE {quotedColumn} IS NOT NULL
+        WHERE {quotedColumn} IS NOT NULL AND length({quotedColumn}) <= {ProfileMaxTrackedValueLength}
         GROUP BY {quotedColumn}
         ORDER BY occurrences DESC, value
         LIMIT {TopValueCount};
         """;
 
+        using var interrupt = InterruptOnCancel(topCommand, deadline);
         var topValues = new List<ValueFrequency>();
         using var reader = topCommand.ExecuteReader();
         while (reader.Read())
@@ -183,15 +242,61 @@ public sealed partial class SqliteExplorer
     }
 
     /// <summary>
+    /// Registers an interrupt of <paramref name="command"/> for when <paramref name="deadline"/>
+    /// is cancelled. The returned registration must be disposed before the command is.
+    /// </summary>
+    private static CancellationTokenRegistration InterruptOnCancel(SqliteCommand command, CancellationToken deadline) =>
+        deadline.Register(() =>
+        {
+            try
+            {
+                command.Cancel();
+            }
+            catch (InvalidOperationException)
+            {
+                // The statement already finished; there is nothing left to interrupt.
+            }
+        });
+
+    /// <summary>Throws the profiling timeout once <paramref name="deadline"/> has been cancelled.</summary>
+    private void ThrowIfExpired(CancellationToken deadline)
+    {
+        if (deadline.IsCancellationRequested)
+            throw ProfileTimeoutException();
+    }
+
+    private InvalidOperationException ProfileTimeoutException() =>
+        new($"Profiling exceeded the time budget of {QueryTimeoutSeconds} seconds. Lower sampleRows or profile a narrower table.");
+
+    /// <summary>
+    /// Tracks how many distinct values may still be retained across every column of one
+    /// profiled table. Once the budget is spent, further columns fall back to approximate figures.
+    /// </summary>
+    private sealed class DistinctBudget(int capacity)
+    {
+        private int _remaining = capacity;
+
+        /// <summary>Reserves one slot, returning false when none remain.</summary>
+        public bool TryReserve()
+        {
+            if (_remaining <= 0)
+                return false;
+
+            _remaining--;
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Accumulates null count, min/max and (up to <see cref="ProfileDistinctCap"/>)
     /// exact distinct-value frequencies for one column across a single pass over a
     /// result set.
     /// </summary>
-    private sealed class ColumnAccumulator
+    private sealed class ColumnAccumulator(DistinctBudget budget)
     {
         private readonly Dictionary<object, long> _frequencies = new();
 
-        /// <summary>Number of non-null values observed.</summary>
+        /// <summary>Number of non-null values observed, including oversized ones.</summary>
         public long NonNullCount { get; private set; }
 
         /// <summary>Smallest non-null value observed, by best-effort comparison.</summary>
@@ -219,6 +324,9 @@ public sealed partial class SqliteExplorer
                 return;
 
             NonNullCount++;
+            if (IsOversized(value))
+                return;
+
             UpdateMinMax(value);
 
             if (!IsLowCardinality)
@@ -230,7 +338,7 @@ public sealed partial class SqliteExplorer
                 return;
             }
 
-            if (_frequencies.Count >= ProfileDistinctCap)
+            if (_frequencies.Count >= ProfileDistinctCap || !budget.TryReserve())
             {
                 IsLowCardinality = false;
                 return;
@@ -239,6 +347,17 @@ public sealed partial class SqliteExplorer
             _frequencies[value] = 1;
             DistinctCount = _frequencies.Count;
         }
+
+        /// <summary>
+        /// True for text or blob values longer than <c>ProfileMaxTrackedValueLength</c>, which
+        /// are never retained. Numeric values are always short enough to keep.
+        /// </summary>
+        private static bool IsOversized(object value) => value switch
+        {
+            string text => text.Length > ProfileMaxTrackedValueLength,
+            byte[] blob => blob.Length > ProfileMaxTrackedValueLength,
+            _ => false,
+        };
 
         /// <summary>
         /// Returns the top <paramref name="count"/> most frequent values observed. Only

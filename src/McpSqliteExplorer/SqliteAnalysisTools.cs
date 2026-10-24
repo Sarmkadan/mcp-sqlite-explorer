@@ -118,11 +118,11 @@ public sealed class SqliteAnalysisTools
     }
 
     [McpServerTool(Name = "profile_table")]
-    [Description("Profile every column of a table: row count, null count and rate, distinct cardinality, min/max, and the most frequent values, computed in a single pass over the data. Tables larger than sampleRows are profiled from a leading sample instead of a full scan, with the result flagged as sampled.")]
+    [Description("Profile every column of a table: row count, null count and rate, distinct cardinality, min/max, and the most frequent values, computed in a single pass over the data. Tables larger than sampleRows are profiled from a leading sample instead of a full scan, with the result flagged as sampled. Text longer than 256 characters and blobs longer than 256 bytes are counted as non-null but excluded from min/max and value frequencies. The call fails with an error if it exceeds the server's query time budget.")]
     public static string ProfileTable(
         SqliteExplorer explorer,
         [Description("Name of the table to profile.")] string table,
-        [Description("Row budget before switching to a sample instead of a full scan (default 100000).")] long sampleRows = SqliteExplorer.DefaultProfileSampleRows)
+        [Description("Row budget before switching to a sample instead of a full scan (default 100000, maximum 1000000).")] long sampleRows = SqliteExplorer.DefaultProfileSampleRows)
     {
         return Guarded(() =>
         {
