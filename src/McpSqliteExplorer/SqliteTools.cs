@@ -145,6 +145,26 @@ public sealed class SqliteTools
         });
 
     /// <summary>
+    /// Run a single read-only SELECT (or WITH ... SELECT) query and return the result as CSV text, capped at 10000 rows.
+    /// </summary>
+    /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
+    /// <param name="sql">A single SELECT or WITH ... SELECT statement. No INSERT/UPDATE/DELETE/DDL and no multiple statements.</param>
+    /// <param name="timeBudgetSeconds">Maximum execution time in seconds (default 15). Set to 0 to disable timeout.</param>
+    /// <returns>RFC 4180 CSV text (header row, then data rows), or a JSON error payload when the query is rejected.</returns>
+    [McpServerTool(Name = "export_query_csv")]
+    [Description("Run a single read-only SELECT (or WITH ... SELECT) query and return the result as CSV text (RFC 4180: header row, then data rows). Capped at 10000 rows; if truncated, a final line starting with '#' says so. Write statements are rejected.")]
+    public static string ExportQueryCsv(
+        SqliteExplorer explorer,
+        [Description("A single SELECT or WITH ... SELECT statement. No INSERT/UPDATE/DELETE/DDL and no multiple statements.")] string sql,
+        [Description("Maximum execution time in seconds (default 15). Set to 0 to disable timeout.")] int timeBudgetSeconds = 15) =>
+        GuardedText(() =>
+        {
+            ArgumentNullException.ThrowIfNull(explorer);
+            ArgumentException.ThrowIfNullOrEmpty(sql);
+            return SqliteCsv.Format(explorer.ExportSelect(sql, timeBudgetSeconds));
+        });
+
+    /// <summary>
     /// Run EXPLAIN QUERY PLAN for a SELECT statement and return the execution plan.
     /// </summary>
     /// <param name="explorer">The <see cref="SqliteExplorer"/> instance to query.</param>
@@ -212,6 +232,32 @@ public sealed class SqliteTools
         {
             var result = SqliteExplorer.ExecuteWithRetryAsync(body).GetAwaiter().GetResult();
             return Serialize(result);
+        }
+        // ArgumentNullException is a programmer error (a null explorer), not bad input, so it propagates.
+        catch (Exception ex) when (ex is (ArgumentException and not ArgumentNullException) or FileNotFoundException or InvalidOperationException)
+        {
+            return Serialize(new { error = ex.Message });
+        }
+        catch (SqliteException ex) when (ex.SqliteErrorCode is 5 or 6)
+        {
+            return Serialize(new { error = "database busy: the SQLite file is locked by another process; retry the call once the writer has finished." });
+        }
+    }
+
+    /// <summary>
+    /// Text counterpart of <see cref="Guarded"/> for tools whose success output is plain text (CSV) rather than JSON.
+    /// Errors are still returned as the same structured <c>{ "error": ... }</c> JSON payload, so callers can tell them apart.
+    /// </summary>
+    /// <param name="body">The tool logic to execute; its return value is returned verbatim.</param>
+    /// <returns>The tool's text output, or a JSON error payload.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is null.</exception>
+    internal static string GuardedText(Func<string> body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+
+        try
+        {
+            return SqliteExplorer.ExecuteWithRetryAsync(body).GetAwaiter().GetResult();
         }
         // ArgumentNullException is a programmer error (a null explorer), not bad input, so it propagates.
         catch (Exception ex) when (ex is (ArgumentException and not ArgumentNullException) or FileNotFoundException or InvalidOperationException)

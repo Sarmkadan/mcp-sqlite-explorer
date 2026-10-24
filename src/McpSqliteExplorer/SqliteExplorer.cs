@@ -71,6 +71,9 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
     /// <summary>Default row cap when the caller does not specify one.</summary>
     public const int DefaultRowCap = 100;
 
+    /// <summary>Row cap for CSV export. Larger than <see cref="MaxRowCap"/> so exports can carry more data than interactive queries.</summary>
+    public const int MaxExportRowCap = 10000;
+
     /// <summary>
     /// Configurable query timeout in seconds. Default is 10 seconds.
     /// </summary>
@@ -477,6 +480,28 @@ public sealed partial class SqliteExplorer : IDisposable, ISqliteCatalog
 
         var cap = ClampLimit(limit);
         return ExecuteReadOnly(sql, cap, timeBudgetSeconds);
+    }
+
+    /// <summary>
+    /// Runs a single read-only <c>SELECT</c> (or <c>WITH ... SELECT</c>) statement for export,
+    /// capping the number of rows at <see cref="MaxExportRowCap"/>.
+    /// </summary>
+    /// <param name="sql">The SQL query to execute.</param>
+    /// <param name="timeBudgetSeconds">Maximum execution time in seconds (default 15). Set to 0 to disable timeout.</param>
+    /// <returns>A <see cref="QueryResult"/> containing up to <see cref="MaxExportRowCap"/> rows and metadata.</returns>
+    public QueryResult ExportSelect(string sql, int timeBudgetSeconds = 15)
+    {
+        try
+        {
+            GuardSelectOnly(sql);
+        }
+        catch (ArgumentException ex)
+        {
+            QueryRejectedLog(_logger, ex.Message, ex);
+            throw;
+        }
+
+        return ExecuteReadOnly(sql, MaxExportRowCap, timeBudgetSeconds);
     }
 
     /// <summary>
