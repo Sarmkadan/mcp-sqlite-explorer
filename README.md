@@ -400,3 +400,7 @@ var explainJson = SqliteTools.ExplainQuery(explorer, "SELECT * FROM users WHERE 
 // Get statistics for a table
 var statsJson = SqliteTools.TableStats(explorer, "users");
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).
