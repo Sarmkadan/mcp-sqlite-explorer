@@ -59,6 +59,7 @@ public sealed class SqlGuardTests
     /// <summary>
     /// Verifies that the SELECT-only guard rejects write statements hidden behind a CTE.
     /// </summary>
+    [Fact]
     public void GuardSelectOnly_RejectsWriteHiddenBehindCte()
     {
         Assert.Throws<ArgumentException>(() =>

@@ -53,7 +53,7 @@ public static class SqliteExplorerTestsExtensions
     /// <exception cref="ArgumentNullException"><paramref name="result"/> is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="columnName"/> is null or empty.</exception>
     /// <exception cref="InvalidOperationException">Result has no rows or column doesn't exist.</exception>
-    public static T GetValue<T>(this SqliteExplorerTests _, QueryResult result, string columnName)
+    public static T GetValue<T>(this SqliteExplorerTests? _, QueryResult result, string columnName)
     {
         ArgumentNullException.ThrowIfNull(result);
         ArgumentException.ThrowIfNullOrEmpty(columnName);
@@ -71,7 +71,7 @@ public static class SqliteExplorerTestsExtensions
         }
 
         var value = row[columnIndex];
-        return (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
+        return (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture)!;
     }
 
     /// <summary>
@@ -87,7 +87,7 @@ public static class SqliteExplorerTestsExtensions
     /// <exception cref="ArgumentException"><paramref name="columnName"/> is null or empty.</exception>
     /// <exception cref="InvalidOperationException">Column doesn't exist in the result.</exception>
     public static T GetValue<T>(
-        this SqliteExplorerTests _,
+        this SqliteExplorerTests? _,
         QueryResult result,
         int rowIndex,
         string columnName)
@@ -109,7 +109,7 @@ public static class SqliteExplorerTestsExtensions
         }
 
         var value = row[columnIndex];
-        return (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
+        return (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture)!;
     }
 
     private static int FindColumnIndex(IReadOnlyList<string> columns, string columnName)

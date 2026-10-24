@@ -271,7 +271,7 @@ namespace McpSqliteExplorer.Tests
             Assert.Equal(4, columns.Count);
 
             // Check primary key
-            var idColumn = Assert.Single(columns.Where(c => c.PrimaryKey));
+            var idColumn = Assert.Single(columns, c => c.PrimaryKey);
             Assert.Equal("id", idColumn.Name);
 
             // Check NOT NULL constraint

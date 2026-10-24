@@ -3,8 +3,6 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <RootNamespace>McpSqliteExplorer</RootNamespace>
 
     <!-- NuGet package metadata -->
@@ -24,8 +22,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>mcp-sqlite-explorer</ToolCommandName>
 
-    <!-- Deterministic builds and SourceLink -->
-    <Deterministic>true</Deterministic>
+    <!-- SourceLink -->
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
@@ -43,6 +40,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <!-- Pin the transitive SQLite native lib past GHSA-2m69-gcr7-jv3q (SQLite < 3.50.2); warnings are errors. -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.14" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
     <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.402" PrivateAssets="All" />

@@ -160,7 +160,7 @@ namespace McpSqliteExplorer.Tests
         /// produce one load and no exceptions.
         /// </summary>
         [Fact]
-        public void ConcurrentCallsSameDatabase_NoExceptions()
+        public async Task ConcurrentCallsSameDatabase_NoExceptions()
         {
             // Arrange
             var innerCatalog = new SqliteCatalog(_dbPath);
@@ -172,20 +172,20 @@ namespace McpSqliteExplorer.Tests
                 .ToList();
 
             // Wait for all tasks to complete
-            Task.WaitAll(tasks.ToArray());
+            var results = await Task.WhenAll(tasks);
 
             // Assert - no exceptions thrown
             // All should have returned data
-            foreach (var task in tasks)
+            foreach (var result in results)
             {
-                Assert.NotNull(task.Result);
+                Assert.NotNull(result);
             }
 
             // Verify all results are the same (cached data)
-            var firstResult = tasks[0].Result;
-            foreach (var task in tasks.Skip(1))
+            var firstResult = results[0];
+            foreach (var result in results.Skip(1))
             {
-                Assert.Equal(firstResult, task.Result);
+                Assert.Equal(firstResult, result);
             }
         }
 

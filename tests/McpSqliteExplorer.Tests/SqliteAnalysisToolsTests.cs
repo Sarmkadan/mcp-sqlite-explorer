@@ -160,7 +160,6 @@ namespace McpSqliteExplorer.Tests
 
             Assert.Equal(sql, root.GetProperty("sql").GetString());
             var nodes = root.GetProperty("nodes");
-            Assert.NotNull(nodes);
         }
 
         [Fact]
@@ -207,7 +206,6 @@ namespace McpSqliteExplorer.Tests
             Assert.Equal(sql, root.GetProperty("sql").GetString());
             var suggestions = root.GetProperty("suggestions");
             // May be empty if the heuristic decides no index is needed, but the JSON must be present.
-            Assert.NotNull(suggestions);
         }
 
         [Fact]
@@ -276,7 +274,7 @@ namespace McpSqliteExplorer.Tests
             var suggestion = suggestionsArray[0];
             Assert.Equal("employee", suggestion.GetProperty("table").GetString());
             var columns = suggestion.GetProperty("columns");
-            Assert.Contains(columns.EnumerateArray(), c => c.GetString().Equals("department_id", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(columns.EnumerateArray(), c => string.Equals(c.GetString(), "department_id", StringComparison.OrdinalIgnoreCase));
         }
 
         [Fact]
@@ -357,7 +355,6 @@ namespace McpSqliteExplorer.Tests
             Assert.Equal(sql, root.GetProperty("sql").GetString());
             var suggestions = root.GetProperty("suggestions");
             // May be empty or contain suggestions - either is acceptable
-            Assert.NotNull(suggestions);
         }
 
         [Fact]

@@ -23,15 +23,6 @@ public sealed class SqliteExplorerValidationException : ArgumentException
     /// <param name="message">The error message that explains the reason for the exception.</param>
     /// <param name="paramName">The name of the parameter that caused the current exception.</param>
     public SqliteExplorerValidationException(string message, string? paramName) : base(message, paramName) { }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="SqliteExplorerValidationException"/> class with serialized data.
-    /// </summary>
-    /// <param name="info">The <see cref="System.Runtime.Serialization.SerializationInfo"/> that holds the serialized object data about the exception being thrown.</param>
-    /// <param name="context">The <see cref="System.Runtime.Serialization.StreamingContext"/> that contains contextual information about the source or destination.</param>
-    private SqliteExplorerValidationException(
-        System.Runtime.Serialization.SerializationInfo info,
-        System.Runtime.Serialization.StreamingContext context) : base(info, context) { }
 }
 
 /// <summary>
@@ -117,9 +108,8 @@ public static class SqliteExplorerValidation
     /// Determines whether the supplied <see cref="SqliteExplorer"/> instance is valid.
     /// </summary>
     /// <param name="value">The explorer instance to check.</param>
-    /// <returns><c>true</c> if no validation problems are reported; otherwise, <c>false</c>.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="value"/> is <c>null</c>.</exception>
-    public static bool IsValid(this SqliteExplorer value) => value is not null && !value.Validate().Any();
+    /// <returns><c>true</c> if no validation problems are reported; <c>false</c> otherwise, including when <paramref name="value"/> is <c>null</c>.</returns>
+    public static bool IsValid(this SqliteExplorer? value) => value is not null && !value.Validate().Any();
 
     /// <summary>
     /// Ensures that the supplied <see cref="SqliteExplorer"/> instance is valid.
